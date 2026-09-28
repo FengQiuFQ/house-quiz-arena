@@ -1,0 +1,749 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   动效系统 — 唯一时间/缓动来源 + 持续流动 + 连续转场（单一机制，不叠加覆盖）
+   分层：
+     ① 全局背景  大尺度水墨缓慢迁移、形态交叠（低对比，不妨碍阅读）
+     ② House 卡  各自的纹理缓慢扩散/移动/变形（不同步、不整卡漂浮）
+     ③ 局部材质  玻璃边缘高光、选中轮廓轻微流动（仅少量关键位置）
+   规则：只动 transform / opacity；文字与数字永不参与流动；隐藏页与离屏元素暂停。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ═══ 时长：按「运动距离与复杂度」分档 —— 不是所有过渡都套同一个数字 ═══
+     原位反馈 → 最短；≤4px 位移 → 短；控件状态 → 中短；局部展开 → 中；
+     导航接力 → 长；页面/详情（整屏几何变化）→ 最长。 */
+  --dur-instant: 90ms;    /* 颜色/描边等原位反馈 */
+  --dur-small: 160ms;     /* ≤4px 位移 */
+  --dur-fast: 200ms;      /* 控件状态变化 */
+  --dur-base: 240ms;      /* 局部展开/收起 */
+  --dur-slow: 320ms;      /* 进度、数值（仅由真实数据驱动） */
+  --dur-nav: 340ms;       /* 导航选中接力 */
+  --dur-panel: 400ms;     /* 弹窗 */
+  --dur-page: 480ms;      /* 页面内容短距离接续 */
+  --dur-expand: 560ms;    /* 共享元素展开 */
+
+  /* ═══ 缓动：进入用减速，离开用加速，匀速运动用 linear ═══ */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.32, 0.5, 1);  /* 轻微过冲：仅用于释放回弹 */
+  --ease-io: cubic-bezier(0.37, 0, 0.63, 1);        /* 装饰往返：两端对称 */
+  --vt-dur: 480ms;
+
+  /* 入场错峰：同组元素按索引递增，总时长受控 */
+  --stagger: 55ms;
+}
+
+/* 简化档：保留同一语言，仅压缩时长并停掉装饰循环 */
+html[data-motion="simplified"] {
+  --vt-dur: 220ms; --dur-page: 220ms; --dur-expand: 280ms; --dur-nav: 240ms;
+  --dur-panel: 260ms; --dur-slow: 220ms; --stagger: 0ms;
+}
+html[data-motion="reduced"] {
+  --vt-dur: 1ms; --dur-page: 1ms; --dur-expand: 1ms; --dur-nav: 1ms; --dur-panel: 1ms;
+  --dur-base: 1ms; --dur-slow: 1ms; --stagger: 0ms;
+}
+
+/* ═══ ① 全局水墨背景（LivingInk，B3 强化）═══════════════════════════════════
+   三层结构：
+     · ink-defs   位移滤镜（把椭圆的完美边缘变成有毛边/渗透感的墨迹）
+     · layer-far  远层：大、慢、视差系数小
+     · layer-near 近层：小、快、墨边更明显、视差系数大
+   响应：--scroll-k（0→1，下滚时墨更浓更大）、--px/--py（光标墨晕位置）。
+   性能：滤镜只做静态几何变换 + 9s 的 scale 过渡，绝不逐帧改滤镜参数。 */
+/* 视觉强度倍率：组件把权重/色值乘以这两个变量输出。
+   做成变量是为了**可 A/B 实测**——同一份代码下调成 0.6 与 1.0 各拍一次，
+   就能给出"强化了多少"的实测差值，而不是凭感觉说"更明显了"。
+   默认 1，等价于设计值；任何倍率都不影响文字对比（文字不在这一层）。 */
+.ink-field {
+  position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  contain: strict;
+  /* isolation 是必须的，不是优化：这一层里有 mix-blend-mode 的成员
+     （.grain 的 overlay、.ptr-bloom 的 screen）。没有 isolation 时，混合组会扩散到
+     祖先的合成组，**指针墨晕每动一帧都会让整页（含文字）重新合成** ——
+     实测症状就是用户反馈的"鼠标移到上方导航/下方描述就一闪一闪，字有时还消失"。
+     加 isolate 后混合只在背景层内部结算，页面内容不再被卷入。 */
+  isolation: isolate;
+  --scroll-y: 0px; --scroll-k: 0; --ptr: 0; --px: 50vw; --py: 50vh;
+}
+
+/* 强度倍率放在 :root 上（可被内联样式覆盖 → 支持运行期 A/B 实测） */
+:root { --ink-w: 1; --ink-c: 1; }
+.ink-field .ink-defs { position: absolute; width: 0; height: 0; }
+.ink-field .field-base {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(120% 76% at 50% -14%, #10201a 0%, rgba(16, 32, 26, 0) 62%),
+    radial-gradient(90% 60% at 12% 108%, #0d1a15 0%, rgba(13, 26, 21, 0) 60%),
+    var(--bg-page);
+}
+
+/* 视差容器层：只做 translateY，位移经 --scroll-y 与系数算出，上限受控 */
+.ink-field .ink-layer { position: absolute; inset: 0; will-change: transform; }
+.ink-field .layer-far  { transform: translate3d(0, calc(var(--scroll-y) * -0.035), 0); }
+.ink-field .layer-near { transform: translate3d(0, calc(var(--scroll-y) * -0.085), 0); }
+
+/* 大尺度墨色域：中心化定位 + transform 漂移（不触发重排）。
+   位移滤镜生成毛边；两个滤镜在极慢周期里交替，读起来像「墨在化开」。 */
+.ink-field .wash {
+  position: absolute; left: 50%; top: 50%; width: 96vmax; height: 96vmax;
+  margin: -48vmax 0 0 -48vmax; border-radius: 50%;
+  filter: blur(46px);
+  opacity: 0.2;
+  transition: opacity 1600ms var(--ease-out), background 1600ms var(--ease-out);
+}
+/* 墨边层：叠一层带位移滤镜的同色副本，专门负责边缘的不规则感。
+   它自己不做 blur（模糊会把毛边抹平），靠 mask 只保留外圈。
+
+   ⚠️ 这里换过一次实现，换的原因是一个**实测到的性能缺陷**（不是审美调整）：
+   原来写的是 `filter: url(#inkBleedA)`，也就是**实时**跑 feTurbulence(3 个八度)
+   + feDisplacementMap。文件下面那句注释曾断言"只做 transform 动画，浏览器按合成层处理，
+   没有逐帧滤镜重算" —— **那个断言是错的**：本元素与它的祖先都带 scale 动画
+   （ink-bleed-swap 与 flow-drift-*），而**缩放会改变光栅化比例**，
+   浏览器无法复用上一次的滤镜结果，只能每帧重跑一遍噪声滤镜。
+   实测（1440×900、真实 GPU 的有头浏览器、边滚动边量帧间隔）：
+
+       基线（实时滤镜）            滚动帧间隔 p50 = 15.1ms  p95 = 17.2ms
+       只关掉这 4 个 ::after 的滤镜  滚动帧间隔 p50 =  6.1ms  p95 =  6.2ms
+       只关掉卡片 .edge 的滤镜       15.0ms（在这台机器上几乎无影响）
+
+   也就是说全站"特别卡"的账基本全记在这 4 个全屏墨域上，而视觉上只是"边缘有点毛"。
+   修法：把同一个滤镜、同样的种子与位移量**烘焙成一张静态贴图**
+   （`_verify/bake_ink_textures.cjs`，用 canvas 的 ctx.filter = url(#id) 生成，
+   与原来逐像素同源），CSS 侧只留一层 mask —— 贴图的 transform 是纯合成操作，
+   不再触发滤镜重算。改完复测：滚动帧间隔回到 6.1ms 一档，像素差异见
+   `_verify/probe_visual_diff.cjs` 的前后对比。 */
+.ink-field .wash::after {
+  content: ""; position: absolute; inset: 6%;
+  border-radius: 50%;
+  background: inherit;
+  -webkit-mask-image: url(/ink-edge-a.png);
+  mask-image: url(/ink-edge-a.png);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  opacity: calc(0.55 + var(--scroll-k) * 0.25);
+  animation: ink-bleed-swap 9s var(--ease-in-out) infinite alternate;
+}
+@keyframes ink-bleed-swap {
+  0%   { transform: scale(0.98) rotate(0deg); }
+  100% { transform: scale(1.04) rotate(1.5deg); }
+}
+.ink-field .wash-a { background: radial-gradient(closest-side, var(--fw-a) 0%, transparent 72%); animation: flow-drift-a 34s var(--ease-io) infinite alternate; }
+.ink-field .wash-b { background: radial-gradient(closest-side, var(--fw-b) 0%, transparent 70%); animation: flow-drift-b 27s var(--ease-io) -9s infinite alternate; }
+.ink-field .wash-c { background: radial-gradient(closest-side, var(--fw-c) 0%, transparent 74%); animation: flow-drift-c 31s var(--ease-io) -17s infinite alternate; }
+.ink-field .wash-d { background: radial-gradient(closest-side, var(--fw-d) 0%, transparent 76%); animation: flow-drift-d 22s var(--ease-io) -5s infinite alternate; }
+/* 近层的墨边用另一个种子（形态不同，不会看起来是同一团复制） */
+.ink-field .layer-near .wash::after {
+  -webkit-mask-image: url(/ink-edge-b.png);
+  mask-image: url(/ink-edge-b.png);
+}
+
+@keyframes flow-drift-a {
+  0%   { transform: translate3d(-34%, -40%, 0) scale(1); }
+  50%  { transform: translate3d(-16%, -22%, 0) scale(1.12); }
+  100% { transform: translate3d(-38%, -26%, 0) scale(1.04); }
+}
+@keyframes flow-drift-b {
+  0%   { transform: translate3d(24%, -32%, 0) scale(1.06); }
+  50%  { transform: translate3d(8%, -12%, 0) scale(0.94); }
+  100% { transform: translate3d(30%, -22%, 0) scale(1.1); }
+}
+@keyframes flow-drift-c {
+  0%   { transform: translate3d(-26%, 26%, 0) scale(1.02); }
+  50%  { transform: translate3d(4%, 34%, 0) scale(1.14); }
+  100% { transform: translate3d(-18%, 22%, 0) scale(0.98); }
+}
+@keyframes flow-drift-d {
+  0%   { transform: translate3d(28%, 22%, 0) scale(0.98); }
+  50%  { transform: translate3d(34%, 8%, 0) scale(1.08); }
+  100% { transform: translate3d(18%, 30%, 0) scale(1.02); }
+}
+
+/* 纸张颗粒：位置连续滚动，位移恰好一个瓦片 → 循环终点与起点图形完全重合，无跳变 */
+.ink-field .grain {
+  position: absolute; inset: -25%;
+  opacity: 0.055; mix-blend-mode: overlay;
+  background-image: var(--grain-url);
+  background-size: var(--grain-tile) var(--grain-tile);
+  animation: grain-scroll 46s linear infinite;
+}
+@keyframes grain-scroll {
+  0%   { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(calc(-1 * var(--grain-tile)), calc(-1 * var(--grain-tile)), 0); }
+}
+/* 光标墨晕：桌面指针处一团极低强度墨晕（触屏不启用，见 LivingInk 的 pointer: fine 判断）。
+   只跟手、不拖尾，不产生持续动画 —— 目的是"页面会回应你"，不是特效堆叠。
+
+   尺寸与定位经过实测调整（原来 46vmax + 依赖自身尺寸的百分比位移，
+   指针每动一帧都要重绘约 2/3 屏幕，是"鼠标一动就闪"的放大器）：
+     · 46vmax → 22vmax：晕的可见部分本来只有中心约 30%，多余半径纯属浪费合成面积；
+     · 位置改为 translate3d(...) + translate(-50%,-50%)：位移不再依赖元素自身尺寸；
+     · will-change: transform 把它固定在合成层上，跟手时不再重绘下方内容。 */
+.ink-field .ptr-bloom {
+  position: absolute; left: 0; top: 0; width: 22vmax; height: 22vmax;
+  transform: translate3d(var(--px), var(--py), 0) translate(-50%, -50%);
+  will-change: transform;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(143, 212, 174, 0.12) 0%, rgba(143, 212, 174, 0) 70%);
+  opacity: calc(var(--ptr) * 0.9);
+  transition: opacity 700ms var(--ease-out);
+  mix-blend-mode: screen;
+}
+/* 顶部渐隐：保证导航区文字对比稳定 */
+.ink-field .field-veil {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(8, 15, 13, 0.86) 0%, rgba(8, 15, 13, 0.24) 22%, rgba(8, 15, 13, 0.3) 70%, rgba(8, 15, 13, 0.9) 100%);
+}
+
+/* 换页期间：墨域收束再展开（与 View Transitions 同步）——「连续空间」的体现：
+   背景不是换了一块，而是同一池墨被搅动。 */
+html[data-vt] .ink-field .ink-layer { animation: ink-collect var(--vt-dur) var(--ease-in-out) both; }
+@keyframes ink-collect {
+  0%   { opacity: 1; }
+  42%  { opacity: 0.72; }
+  100% { opacity: 1; }
+}
+
+/* 减弱档：整层静止（保留静态水墨，功能与观感都在，只是不再流动） */
+html[data-motion="reduced"] .ink-field .wash,
+html[data-motion="reduced"] .ink-field .wash::after,
+html[data-motion="reduced"] .ink-field .grain,
+html[data-motion="reduced"] .ink-field .ink-layer { animation: none !important; }
+html[data-motion="reduced"] .ink-field .ptr-bloom { display: none; }
+html[data-motion="reduced"] .ink-field .layer-far,
+html[data-motion="reduced"] .ink-field .layer-near { transform: none; }
+/* 简化档：保留视差与墨边，停掉持续流动循环（省电、低端机更稳） */
+html[data-motion="simplified"] .ink-field .wash { animation: none !important; }
+html[data-motion="simplified"] .ink-field .wash::after { animation: none !important; }
+
+/* ═══ 大屏「安静材质」档（html.calm-ink）════════════════════════════════════
+   为什么需要单独一档，而不是把全站调慢：
+
+   `.wash` 是 **96vmax 的大圆**（1600px 视口上直径约 1900px），而 `flow-drift-*`
+   里的 translate 百分比是相对**元素自身尺寸**的 —— ±18% 就是 ±345px 的真实位移，
+   四个墨域各自来回数百像素，周期 22–34s。
+
+   这个幅度在桌面近距离看是"墨在缓缓化开"，**在 3–6 米外的墙上大屏就成了
+   明显的整块移动**：实测每帧位移 1.2–1.8px（@3–6m 相当于每秒约 25px 的视野位移），
+   长时间盯着看就是用户反馈的"一闪一闪"。
+   （实测见 _verify/shots 的 diag：0 次动画重启、0 次跳变 —— 不是重置造成的闪，
+     而是**幅度过大**造成的持续可见运动。）
+
+   因此只对**常驻展示页**（投屏 / 观赛大屏）降幅降速：
+   周期 ×3、位移压到 1/3、颗粒滚动几乎停住。桌面交互页保持原来的表现力不变 ——
+   用户明确要求过首页"浮夸"，那是有意为之，不该被一起调安静。
+   `.ink-field` 是全局层，所以用 html 级 class 精确限定作用范围。 */
+html.calm-ink .ink-field .wash-a { animation-duration: 96s; }
+html.calm-ink .ink-field .wash-b { animation-duration: 84s; }
+html.calm-ink .ink-field .wash-c { animation-duration: 108s; }
+html.calm-ink .ink-field .wash-d { animation-duration: 90s; }
+/* 用同一套关键帧但整体缩小合成位移：scale + translate 一起收，形态不变、只变幅度 */
+html.calm-ink .ink-field .wash { animation-name: flow-calm-a; }
+html.calm-ink .ink-field .wash-b { animation-name: flow-calm-b; }
+html.calm-ink .ink-field .wash-c { animation-name: flow-calm-c; }
+html.calm-ink .ink-field .wash-d { animation-name: flow-calm-d; }
+@keyframes flow-calm-a {
+  0%   { transform: translate3d(-34%, -40%, 0) scale(1); }
+  50%  { transform: translate3d(-28%, -33%, 0) scale(1.05); }
+  100% { transform: translate3d(-35%, -36%, 0) scale(1.02); }
+}
+@keyframes flow-calm-b {
+  0%   { transform: translate3d(24%, -32%, 0) scale(1.06); }
+  50%  { transform: translate3d(18%, -26%, 0) scale(1.0); }
+  100% { transform: translate3d(25%, -30%, 0) scale(1.08); }
+}
+@keyframes flow-calm-c {
+  0%   { transform: translate3d(-26%, 26%, 0) scale(1.02); }
+  50%  { transform: translate3d(-20%, 30%, 0) scale(1.08); }
+  100% { transform: translate3d(-24%, 24%, 0) scale(1.0); }
+}
+@keyframes flow-calm-d {
+  0%   { transform: translate3d(28%, 22%, 0) scale(0.98); }
+  50%  { transform: translate3d(31%, 17%, 0) scale(1.03); }
+  100% { transform: translate3d(24%, 26%, 0) scale(1.0); }
+}
+/* 墨边呼吸也从 9s 放到 27s：投屏上"化开"要慢到几乎察觉不到 */
+html.calm-ink .ink-field .wash::after { animation-duration: 27s; }
+/* 颗粒是整屏滚动，46s 走一格在近处是质感、在大屏上是持续横移 */
+html.calm-ink .ink-field .grain { animation-duration: 240s; opacity: 0.04; }
+/* 大屏没有鼠标，光标墨晕本来就不该出现 */
+html.calm-ink .ink-field .ptr-bloom { display: none; }
+/* 卡片材质同样放慢（大屏上有 8 张卡，18–35s 的循环叠起来很热闹） */
+html.calm-ink .ink-mat .mat-layer,
+html.calm-ink .ink-mat .mat-sheen::after { animation-duration: 72s; }
+/* 版本号变化时不要整页重排闪烁：大屏的翻转/淡入保持一次性、不循环 */
+html.calm-ink .ink-field .field-base { transition: none; }
+
+/* ═══ ② House 卡 / 详情主视觉的水墨材质（PaperMaterial）═══════════════════
+   每层不同周期（18–35s）与相位 → 3–5 秒观察即可见变化；隐藏页/离屏暂停。
+   `isolation: isolate` 是关键：把材质的混合模式限制在本卡片内（否则 screen
+   会与页面背景混合，卡面依旧是死板的深色块）。
+   will-change 只加在「正在动的层」上：材质层用了 SVG 滤镜 + 混合模式，
+   长期提升为合成层会占显存；浏览器对 transform 动画本就自动提升，无需常驻提示。 */
+.ink-mat { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; isolation: isolate; }
+.ink-mat .mat-layer {
+  position: absolute; inset: -22%;
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  contain: paint;
+}
+.ink-mat .mat-layer .mat-inner { width: 100%; height: 100%; }
+.ink-mat .mat-layer svg { width: 100%; height: 100%; display: block; }
+/* 材质强度：深墨基底上的「彩色水墨」——低不透明度 + 混合模式，
+   保持卡面为中低亮度，主/次文字对比始终 ≥ 8:1（实测见交付报告）。 */
+.ink-mat .mat-bleed { mix-blend-mode: screen; opacity: 0.6;  animation: ink-bleed 29s var(--ease-io) infinite alternate; }
+.ink-mat .mat-flow  { mix-blend-mode: screen; opacity: 0.52; animation: ink-flow 23s var(--ease-io) -7s infinite alternate; }
+.ink-mat .mat-deep  { mix-blend-mode: multiply; opacity: 0.62; animation: ink-deep 33s var(--ease-io) -13s infinite alternate; }
+.ink-mat .mat-fine  { mix-blend-mode: soft-light; opacity: 0.5; animation: ink-fine 18s var(--ease-io) -3s infinite alternate; }
+/* 角部笔触（构图签名）：screen 提亮；周期最长、位移最小 —— 是「呼吸」而不是「漂移」 */
+.ink-mat .mat-glyph { mix-blend-mode: screen; opacity: 0.72; animation: ink-glyph 35s var(--ease-io) -19s infinite alternate; }
+@keyframes ink-glyph {
+  0%   { transform: translate3d(-0.8%, 0.9%, 0) scale(1.01) rotate(0.4deg); }
+  50%  { transform: translate3d(0.7%, -0.6%, 0) scale(1.035) rotate(-0.3deg); }
+  100% { transform: translate3d(1.1%, 0.5%, 0) scale(1.02) rotate(0.6deg); }
+}
+/* 主视觉（详情页头部）：材质更明显 —— 文字在最下方且有兜底渐变；
+   整幅尺寸放大 + 单独一档透明度，避免宽幅下退化成一条平滑渐变。 */
+.ink-mat-hero .mat-layer { inset: -16%; }
+.ink-mat-hero .mat-inner { transform: scale(1.34) !important; }
+.ink-mat-hero .mat-bleed { opacity: 1; }
+.ink-mat-hero .mat-flow { opacity: 0.92; }
+.ink-mat-hero .mat-deep { opacity: 0.68; }
+.ink-mat-hero .mat-fine { opacity: 0.7; }
+.ink-mat-hero .mat-glyph { opacity: 0.9; }
+.ink-mat-hero .mat-grain { background-size: 230px 230px; opacity: 0.55; }
+/* 投屏单元 / 揭晓单元：介于两者之间 */
+.ink-mat-orb .mat-bleed, .ink-mat-strip .mat-bleed { opacity: 0.72; }
+.ink-mat-orb .mat-flow, .ink-mat-strip .mat-flow { opacity: 0.62; }
+
+/* 投屏卡（stage）在**大屏档**下单独加实。
+   实测依据：4K 下投屏卡 1593×687，内部 SVG 被放大到 2350×1038（基准 600×380 的约 4 倍），
+   柔和渐变被摊薄，逐卡实测 chroma 只有 4.4–9.7，远看几乎是一片深色板。
+   投屏是"3–6 米外看"的场景，材质本就该更实；卡片上只有院名一种文字（大字号，3:1 门槛），
+   且院名自带贴身描影，因此提高材质不会影响可读性。 */
+html[data-display="large"] .ink-mat-stage .mat-bleed { opacity: 1; }
+html[data-display="large"] .ink-mat-stage .mat-flow { opacity: 0.95; }
+html[data-display="large"] .ink-mat-stage .mat-deep { opacity: 0.72; }
+html[data-display="large"] .ink-mat-stage .mat-fine { opacity: 0.8; }
+html[data-display="large"] .ink-mat-stage .mat-glyph { opacity: 1; }
+/* 大屏档下投屏卡的遮罩也放宽：原遮罩为桌面小卡设计，在大卡上会把中段压平 */
+html[data-display="large"] .ink-mat-stage .mat-veil {
+  background: linear-gradient(180deg, rgba(8, 15, 13, 0.3) 0%, rgba(8, 15, 13, 0.05) 40%,
+                              rgba(8, 15, 13, 0.08) 66%, rgba(8, 15, 13, 0.42) 100%);
+}
+
+/* 墨迹边缘（B3 强化）：给 bleed/flow 两层再叠一张带位移滤镜的同源副本，
+   专门负责「边缘的不规则感」—— 原来的椭圆色斑经过 feTurbulence+feDisplacementMap 后，
+   轮廓会碎成有毛边、有渗透支角的墨迹。
+
+   ⚠️ 这段注释原来写着"副本是同一张静态 SVG，只做 transform 动画，浏览器按合成层处理，
+   **没有逐帧滤镜重算**"。**那个说法是错的**，而且错的代价很大：
+   `.mat-layer` 的动画带 scale，缩放会改变光栅化比例 → 位移滤镜必须每帧重算。
+   全屏墨域那 4 个实例上实测到了 2.5 倍的帧时间代价（已改成烘焙贴图，见上方 `.wash::after`）。
+
+   这里（卡片 `.edge`）**暂时保留实时滤镜**，理由是实测过的：在首页边滚边量，
+   只关掉这两处的滤镜对滚动帧间隔没有可测影响（15.0ms vs 15.1ms）——
+   卡片面积小，滤镜成本与像素面积成正比，所以在这个尺寸上可以接受。
+   两条约束：① 只画在边缘（mask 挖掉中心），中心区留给数据带保证文字对比；
+            ② 减弱档与简化档直接不渲染（见文件末尾的降级规则）。
+   若将来把材质层用到大面积元素（整屏主视觉、4K 投屏卡），**必须同样改成烘焙贴图**，
+   否则会把刚修掉的这个卡顿原样搬回来。 */
+.ink-mat .mat-layer .mat-inner {
+  position: relative;
+  /* 贴图按 viewBox 原始宽高比（600×380 的 2 倍）烘焙、不裁切，
+     cover 复原原先 SVG 的 preserveAspectRatio="xMidYMid slice"。 */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.ink-mat .edge {
+  position: absolute; inset: -6%; pointer-events: none;
+  -webkit-mask-image: radial-gradient(closest-side, transparent 46%, #000 78%);
+  mask-image: radial-gradient(closest-side, transparent 46%, #000 78%);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.ink-mat .edge svg { width: 100%; height: 100%; display: block; }
+/* 原先这里是 `filter: url(#inkBleedA)` / `url(#inkBleedB)` —— 两个**实时**滤镜，
+   与 SVG 内部的 11 个一起构成"每帧重跑噪声"的 13 个元素。
+   现在 .edge 复用同一张**已烘焙**的贴图：位移/毛糙已经烤进图里了，
+   再套一层实时位移纯属重复计算，所以只剩透明度。 */
+.ink-mat .mat-bleed .edge { opacity: 0.85; }
+.ink-mat .mat-flow .edge  { opacity: 0.7; }
+html[data-motion="reduced"] .ink-mat .edge,
+html[data-motion="simplified"] .ink-mat .edge { display: none; }
+/* 细颗粒（静态）与墨色浓淡（低频软噪声遮罩）：不参与动画，保证素材层本身稳定 */
+.ink-mat .mat-grain {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0.5; mix-blend-mode: overlay;
+  background-size: 150px 150px;
+}
+.ink-mat .mat-mottle {
+  position: absolute; inset: -12%; pointer-events: none; opacity: 0.22; mix-blend-mode: soft-light;
+  background-image: var(--soft-noise-url); background-size: 300px 300px;
+}
+.ink-mat .mat-veil {
+  position: absolute; inset: 0; pointer-events: none;
+  /* 材质预算（实测标定）：卡片上部只放 22–28px 院名（大字号门槛 3:1），可保留明显墨色；
+     小字号正文与数据落在卡片自身的实底数据带上（见 app.css .hc-main/.hc-foot），
+     因此这里不再需要把整卡压暗，材质得以保持层次。 */
+  background: linear-gradient(180deg,
+    rgba(8, 15, 13, 0.28) 0%,
+    rgba(8, 15, 13, 0.16) 34%,
+    rgba(8, 15, 13, 0.1) 62%,
+    rgba(8, 15, 13, 0.5) 100%);
+}
+.ink-mat-hero .mat-veil {
+  background: linear-gradient(180deg, rgba(8, 15, 13, 0.42) 0%, rgba(8, 15, 13, 0.2) 30%, rgba(8, 15, 13, 0.72) 100%);
+}
+.ink-mat-orb .mat-veil { background: linear-gradient(180deg, rgba(8, 15, 13, 0.2), rgba(8, 15, 13, 0.52)); }
+/* 玻璃/轮廓高光：容器只做定位，扫光由 ::after 承担（见下方 transform 版 keyframes） */
+.ink-mat .mat-sheen { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+@keyframes ink-bleed {
+  0%   { transform: translate3d(-2.5%, -1.6%, 0) scale(1.03) rotate(-1.4deg); opacity: 0.62; }
+  50%  { transform: translate3d(1.6%, 1.2%, 0) scale(1.09) rotate(0.6deg); opacity: 0.8; }
+  100% { transform: translate3d(3.2%, -0.8%, 0) scale(1.04) rotate(1.5deg); opacity: 0.66; }
+}
+@keyframes ink-flow {
+  0%   { transform: translate3d(3%, 2.2%, 0) scale(1.08) rotate(1.8deg); opacity: 0.46; }
+  50%  { transform: translate3d(-1.4%, -1.8%, 0) scale(1.02) rotate(-0.9deg); opacity: 0.62; }
+  100% { transform: translate3d(-3.4%, 1.4%, 0) scale(1.1) rotate(-2.2deg); opacity: 0.5; }
+}
+@keyframes ink-deep {
+  0%   { transform: translate3d(1.8%, -2.4%, 0) scale(1.02) rotate(0.8deg); opacity: 0.42; }
+  50%  { transform: translate3d(-2.6%, 1.8%, 0) scale(1.11) rotate(-1.6deg); opacity: 0.6; }
+  100% { transform: translate3d(1.2%, 2.6%, 0) scale(1.05) rotate(1.2deg); opacity: 0.46; }
+}
+@keyframes ink-fine {
+  0%   { transform: translate3d(-1.2%, 2.6%, 0) scale(1.05) rotate(2deg); opacity: 0.36; }
+  50%  { transform: translate3d(2.4%, -1.2%, 0) scale(0.98) rotate(-1.2deg); opacity: 0.56; }
+  100% { transform: translate3d(-0.6%, -2.8%, 0) scale(1.06) rotate(0.4deg); opacity: 0.42; }
+}
+/* 玻璃/轮廓高光：用「位移一个自身宽度」实现，只动 transform —— 不再动 background-position
+   （background-position 会触发重绘，transform 走合成器） */
+.ink-mat .mat-sheen::after {
+  content: ""; position: absolute; top: -20%; bottom: -20%; left: 0; width: 62%;
+  background: linear-gradient(100deg, transparent 0%, rgba(237, 241, 235, 0.16) 46%, transparent 100%);
+  animation: sheen-sweep 11s var(--ease-io) infinite alternate;
+}
+@keyframes sheen-sweep {
+  0%   { transform: translate3d(-58%, 0, 0) skewX(-6deg); }
+  100% { transform: translate3d(196%, 0, 0) skewX(-6deg); }
+}
+
+/* ═══ 液态控件：按压压缩 + 释放回弹 + 点击位置局部反馈 ═══
+   ⚠️ 容器型可点击块（.q-row / .card-link）**不能参与 scale 压缩**：
+   它们内部还装着真正的控件（勾选框、按钮）。按下时整块缩放会把内部控件
+   从指针底下挪走，于是 mouseup 落回容器本身、click 事件不再派发到控件上 ——
+   表现就是"勾选框点了没反应"。
+
+   实测数据（题库审核页第一行的勾选框，20×20px）：
+     pointerdown 前    x=214.00  w=20.0  transform=none
+     pointerdown 后    x=231.58  w=19.4  transform=matrix(0.97,…)
+   一次按下把勾选框右移 17.6px，指针已不在它身上 —— 点击必然丢失。
+   （React 的 onChange 从未触发，事件日志里只有 mousedown，没有 click/change。）
+
+   因此容器只用"提亮"做按压反馈，位移/缩放留给真正的小控件（.btn/.opt）。
+   视觉上并不吃亏：容器本身很大，提亮已经足够表达"按到了"。 */
+.btn, .opt, .q-row, .tab-item, .nav-link, .card-link, [data-press] {
+  position: relative; overflow: hidden;
+}
+/* 按压反馈走最短档（原位状态变化，不需要位移时间） */
+.pressing { filter: brightness(1.08); }
+.btn.pressing, .tab-item.pressing, .nav-link.pressing, .card-link.pressing { transform: scale(0.97); }
+.btn-primary.pressing { transform: scale(0.97); filter: brightness(1.06) saturate(1.05); }
+.opt.pressing { transform: scale(0.99); }
+/* 释放：短促过冲回弹（190ms）。容器没有缩放，所以回弹也不该有 —— 只有 filter 复原。 */
+.releasing { animation: press-release 190ms var(--ease-spring); }
+@keyframes press-release {
+  0% { transform: scale(0.97); }
+  55% { transform: scale(1.014); }
+  100% { transform: scale(1); }
+}
+/* 容器型块的回弹只做提亮，不做缩放（同上：缩放会挪走内部控件） */
+.q-row.releasing, .card-link.releasing { animation: none; }
+.press-ripple {
+  position: absolute; width: 22px; height: 22px; border-radius: 50%; pointer-events: none;
+  transform: translate(-50%, -50%) scale(0);
+  background: radial-gradient(circle, rgba(237, 241, 235, 0.3) 0%, rgba(237, 241, 235, 0) 70%);
+  animation: press-ripple 420ms var(--ease-out-expo) forwards;
+}
+@keyframes press-ripple {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(11); opacity: 0; }
+}
+
+/* ═══ 导航选中：连续滑动 + 途中伸缩 + 到位恢复 ═══
+   位移用减速缓动（到达要稳），宽度变化与位移同步，避免「先到再拉宽」的割裂感。 */
+.nav { position: relative; display: flex; align-items: center; gap: 2px; }
+.nav-ind {
+  position: absolute; left: 0; top: 0; height: 100%; border-radius: var(--radius-pill);
+  background: rgba(237, 241, 235, 0.16); border: 1px solid var(--line-2);
+  transition: transform var(--dur-nav) var(--ease-out-expo), width var(--dur-nav) var(--ease-out-expo),
+              opacity var(--dur-instant) linear;
+  pointer-events: none; z-index: 0;
+}
+.nav-ind.moving { animation: nav-stretch var(--dur-nav) var(--ease-out); }
+@keyframes nav-stretch {
+  0%   { transform: scaleX(1) scaleY(1); }
+  42%  { transform: scaleX(1.09) scaleY(0.9); }
+  100% { transform: scaleX(1) scaleY(1); }
+}
+.nav-link {
+  position: relative; z-index: 1; display: inline-flex; align-items: center;
+  min-height: var(--touch); /* 触控目标：常规 44（Skill 下限）、希沃大屏 56 */
+  padding: 0 var(--sp-4); border-radius: var(--radius-pill);
+  font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2);
+  white-space: nowrap; /* 关键：导航永不逐字换行 */
+  transition: color var(--dur-instant) linear;
+}
+.nav-link:hover { color: var(--ink-1); }
+.nav-link[aria-current="page"] { color: var(--ink-1); }
+
+/* ═══ 滚动进入：未初始化可见，完整动效才等待入场，显示一次后恢复普通文档 ═══ */
+.reveal { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion="full"] .reveal[data-reveal="waiting"] { opacity: 0; transform: translate3d(0, 18px, 0); }
+  html[data-motion="full"] .reveal[data-reveal="entering"] { animation: rise-in 650ms var(--ease-out) var(--rv-delay, 0ms) both; }
+}
+@keyframes rise-in { from { opacity: 0; transform: translate3d(0, 18px, 0); } to { opacity: 1; transform: none; } }
+html[data-motion="simplified"] .reveal,
+html[data-motion="reduced"] .reveal { opacity: 1; transform: none; animation: none; }
+
+/* ═══ 全站滚动叙事：水墨笔势显影 + 方向感回滑 ═══ */
+.scroll-trace {
+  --scroll-progress: 0;
+  position: fixed; inset: 0 auto auto 0; z-index: 120;
+  width: 100%; height: 2px; pointer-events: none;
+  opacity: .78; transform: scaleX(var(--scroll-progress)); transform-origin: left center;
+  background: linear-gradient(90deg, rgba(84, 160, 126, .84), rgba(192, 202, 180, .82));
+}
+html[data-scroll-direction="up"] .scroll-trace {
+  background: linear-gradient(90deg, rgba(190, 112, 78, .74), rgba(206, 194, 164, .78));
+}
+html[data-motion="simplified"] .scroll-trace,
+html[data-motion="reduced"] .scroll-trace { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion="full"] .app-shell main [data-scroll-motion="entering"] {
+    animation-duration: 560ms; animation-delay: var(--scroll-delay, 0ms);
+    animation-timing-function: var(--ease-out-expo); animation-fill-mode: both;
+  }
+  html[data-motion="full"] .app-shell main [data-scroll-motion="entering"][data-scroll-direction="down"] {
+    animation-name: ink-scroll-down;
+  }
+  html[data-motion="full"] .app-shell main [data-scroll-motion="entering"][data-scroll-direction="up"] {
+    animation-name: ink-scroll-up;
+  }
+  html[data-motion="full"] .app-shell main [data-scroll-motion="entering"]:is(h1, h2, .section-title) {
+    animation-duration: 480ms; animation-timing-function: steps(9, end);
+  }
+  html[data-motion="full"] .app-shell main [data-scroll-motion="entering"][data-scroll-direction="down"]:is(h1, h2, .section-title) {
+    animation-name: ink-scroll-typeset-down;
+  }
+  html[data-motion="full"] .app-shell main [data-scroll-motion="entering"][data-scroll-direction="up"]:is(h1, h2, .section-title) {
+    animation-name: ink-scroll-typeset-up;
+  }
+}
+@keyframes ink-scroll-down {
+  from { opacity: .74; translate: 0 16px; }
+  72% { opacity: 1; translate: 0 -1px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes ink-scroll-up {
+  from { opacity: .74; translate: 0 -14px; }
+  72% { opacity: 1; translate: 0 1px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes ink-scroll-typeset-down {
+  from { opacity: .56; clip-path: inset(0 100% 0 0); translate: 0 .12em; }
+  to { opacity: 1; clip-path: inset(0); translate: 0 0; }
+}
+@keyframes ink-scroll-typeset-up {
+  from { opacity: .56; clip-path: inset(0 0 0 100%); translate: 0 -.1em; }
+  to { opacity: 1; clip-path: inset(0); translate: 0 0; }
+}
+html[data-motion="simplified"] .app-shell main [data-scroll-motion],
+html[data-motion="reduced"] .app-shell main [data-scroll-motion] {
+  animation: none !important; opacity: 1; translate: none; clip-path: none;
+}
+
+/* 指针停留时，墨光只在当前卡面内部漫开；正文与卡片位置不跟手。 */
+.app-shell main :is(.house-card, .feature, .panel-card) {
+  position: relative; isolation: isolate;
+}
+.app-shell main :is(.house-card, .feature, .panel-card)::after {
+  content: ""; position: absolute; inset: 0; z-index: 1; border-radius: inherit;
+  pointer-events: none; opacity: 0;
+  background: radial-gradient(190px circle at var(--surface-x, 50%) var(--surface-y, 50%), rgba(174, 210, 177, .12), transparent 74%);
+  transition: opacity 240ms var(--ease-out);
+}
+.app-shell main :is(.house-card, .feature, .panel-card)[data-pointer="on"]::after { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell main :is(.house-card, .feature, .panel-card)::after { display: none; }
+}
+html:not([data-motion="full"]) .app-shell main :is(.house-card, .feature, .panel-card)::after { display: none; }
+/* ═══ 页面转场（View Transitions）═══════════════════════════════════════════
+   进入用减速（到达稳定），离开用加速（快速让位）—— 两者时间重叠，不出现空白。 */
+::view-transition-group(root) { animation-duration: var(--vt-dur); }
+::view-transition-old(root) { animation-duration: calc(var(--vt-dur) * 0.72); animation-timing-function: var(--ease-in); }
+::view-transition-new(root) { animation-duration: var(--vt-dur); animation-timing-function: var(--ease-out); }
+html[data-vt="forward"]::view-transition-old(root) { animation-name: vt-out-back; }
+html[data-vt="forward"]::view-transition-new(root) { animation-name: vt-in-fwd; }
+html[data-vt="back"]::view-transition-old(root) { animation-name: vt-out-fwd; }
+html[data-vt="back"]::view-transition-new(root) { animation-name: vt-in-back; }
+html[data-vt="sibling"]::view-transition-old(root) { animation-name: vt-out-left; }
+html[data-vt="sibling"]::view-transition-new(root) { animation-name: vt-in-right; }
+@keyframes vt-out-back  { to   { opacity: 0; transform: translate3d(-24px, 0, 0); } }
+@keyframes vt-in-fwd    { from { opacity: 0; transform: translate3d(32px, 0, 0); } }
+@keyframes vt-out-fwd   { to   { opacity: 0; transform: translate3d(24px, 0, 0); } }
+@keyframes vt-in-back   { from { opacity: 0; transform: translate3d(-32px, 0, 0); } }
+@keyframes vt-out-left  { to   { opacity: 0; transform: translate3d(-24px, 0, 0); } }
+@keyframes vt-in-right  { from { opacity: 0; transform: translate3d(24px, 0, 0); } }
+
+/* House 卡展开：共享元素主角化，根快照只做极轻的推移（只共享水墨材质，文字随根快照淡入） */
+html[data-vt="expand"]::view-transition-old(root),
+html[data-vt="collapse"]::view-transition-old(root) { animation-name: vt-hold; animation-duration: var(--dur-expand); }
+html[data-vt="expand"]::view-transition-new(root),
+html[data-vt="collapse"]::view-transition-new(root) { animation-name: vt-soft-in; animation-duration: var(--dur-expand); }
+@keyframes vt-hold { from { opacity: 1; } to { opacity: 1; } }
+@keyframes vt-soft-in { from { opacity: 0.32; } to { opacity: 1; } }
+::view-transition-group(house-hero) {
+  animation-duration: var(--dur-expand);
+  animation-timing-function: var(--ease-out-expo);
+  z-index: 20;
+}
+
+/* 展开后半段：详情内容错峰进入 */
+.detail-enter > * { animation: detail-in 420ms var(--ease-out-expo) both; }
+.detail-enter > *:nth-child(1) { animation-delay: 260ms; }
+.detail-enter > *:nth-child(2) { animation-delay: 330ms; }
+.detail-enter > *:nth-child(3) { animation-delay: 400ms; }
+.detail-enter > *:nth-child(4) { animation-delay: 460ms; }
+.detail-enter > *:nth-child(5) { animation-delay: 520ms; }
+@keyframes detail-in { from { opacity: 0; transform: translate3d(0, 14px, 0); } to { opacity: 1; transform: none; } }
+html[data-motion="simplified"] .detail-enter > *, html[data-motion="reduced"] .detail-enter > * { animation: none; }
+
+/* ═══ 弹窗：从合理位置展开，关闭回到触发点 ═══ */
+.modal-scrim {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  padding: var(--sp-5); background: rgba(4, 7, 6, 0.6);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  animation: scrim-in 220ms var(--ease-out) both;
+}
+@keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
+.modal-panel { will-change: transform, opacity; max-height: 88vh; overflow: auto; }
+.modal-panel.m-anim { transition: transform var(--dur-panel) var(--ease-spring), opacity 220ms var(--ease-out); }
+
+/* ═══ 抽题仪式（Play）：抽象题卡聚合 → 错位流动 → 前移 → 展开 ═══ */
+.draw-stage { position: relative; min-height: 236px; width: 100%; }
+.draw-card {
+  position: absolute; left: 50%; top: 50%; width: 132px; height: 184px; margin: -92px 0 0 -66px;
+  border-radius: var(--radius-m); overflow: hidden; will-change: transform, opacity; isolation: isolate;
+  background:
+    radial-gradient(120% 100% at 22% 0%, var(--ink-b, #8fd4ae) 0%, transparent 62%),
+    radial-gradient(120% 120% at 78% 100%, var(--ink-a, #2e7d64) 0%, transparent 66%),
+    var(--bg-panel-2);
+  border: 1px solid var(--line-2); box-shadow: var(--shadow-2);
+}
+.draw-card::after { content: ""; position: absolute; inset: 8px; border-radius: 11px; border: 1px solid rgba(237, 241, 235, 0.12); }
+.draw-card.leader { border-color: var(--accent-line); }
+.draw-card.c0 { animation: draw-con-0 520ms var(--ease-out-expo) both; }
+.draw-card.c1 { animation: draw-con-1 520ms var(--ease-out-expo) 60ms both; }
+.draw-card.c2 { animation: draw-con-2 520ms var(--ease-out-expo) 120ms both; }
+.draw-card.c3 { animation: draw-con-3 520ms var(--ease-out-expo) 180ms both; }
+.draw-card.c4 { animation: draw-con-4 520ms var(--ease-out-expo) 240ms both; }
+@keyframes draw-con-0 { from { transform: translate3d(-42vw, -28vh, 0) rotate(-16deg) scale(0.7); opacity: 0; } to { transform: translate3d(-58px, -12px, 0) rotate(-7deg); opacity: 1; } }
+@keyframes draw-con-1 { from { transform: translate3d(38vw, -30vh, 0) rotate(12deg) scale(0.7); opacity: 0; } to { transform: translate3d(48px, 6px, 0) rotate(5deg); opacity: 1; } }
+@keyframes draw-con-2 { from { transform: translate3d(-28vw, 30vh, 0) rotate(9deg) scale(0.7); opacity: 0; } to { transform: translate3d(-24px, 16px, 0) rotate(-3deg); opacity: 1; } }
+@keyframes draw-con-3 { from { transform: translate3d(40vw, 24vh, 0) rotate(-10deg) scale(0.7); opacity: 0; } to { transform: translate3d(30px, -18px, 0) rotate(8deg); opacity: 1; } }
+@keyframes draw-con-4 { from { transform: translate3d(0, -38vh, 0) scale(0.7); opacity: 0; } to { transform: translate3d(2px, -2px, 0) rotate(1deg); opacity: 1; } }
+.draw-stage.merged .draw-card { animation: draw-shuffle 340ms var(--ease-out) both; }
+.draw-stage.merged .draw-card.leader { animation: draw-lead 420ms var(--ease-spring) both; }
+@keyframes draw-shuffle {
+  0% { transform: translate3d(var(--sx, 0), var(--sy, 0), 0) rotate(var(--sr, 0deg)); }
+  50% { transform: translate3d(calc(var(--sx, 0px) * 0.4), -10px, 0) rotate(calc(var(--sr, 0deg) * -0.6)); }
+  100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+}
+@keyframes draw-lead { 0% { transform: translate3d(2px, -2px, 0) rotate(1deg) scale(1); } 100% { transform: translate3d(0, -26px, 0) rotate(0deg) scale(1.06); } }
+.draw-stage.reveal-q .draw-card { animation: draw-fade 260ms var(--ease-out) forwards; }
+@keyframes draw-fade { to { opacity: 0; transform: translate3d(0, -30px, 0) scale(0.96); } }
+.round-enter { animation: round-in 360ms var(--ease-out-expo) both; }
+@keyframes round-in { from { opacity: 0; transform: translate3d(0, 16px, 0); } to { opacity: 1; transform: none; } }
+
+/* ═══ 揭晓舞台（Results）：集结 → 蓄势 → 胜者 → 榜单 → 稳定 ═══ */
+.rv-orbs { display: flex; gap: clamp(14px, 3vw, 34px); flex-wrap: wrap; justify-content: center; }
+.rv-orb {
+  position: relative; overflow: hidden; isolation: isolate;
+  width: clamp(74px, 10vw, 112px); height: clamp(74px, 10vw, 112px); border-radius: 28%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: clamp(15px, 1.8vw, 21px); color: var(--ink-1);
+}
+.rv-gather .rv-orb { animation: rv-gather 700ms var(--ease-out-expo) both; }
+.rv-gather .rv-orb:nth-child(1) { animation-delay: 0ms; }
+.rv-gather .rv-orb:nth-child(2) { animation-delay: 70ms; }
+.rv-gather .rv-orb:nth-child(3) { animation-delay: 140ms; }
+.rv-gather .rv-orb:nth-child(4) { animation-delay: 210ms; }
+@keyframes rv-gather { from { opacity: 0; transform: translate3d(0, 46px, 0) scale(0.82); } to { opacity: 1; transform: none; } }
+.rv-build .rv-orbs { animation: rv-build 860ms var(--ease-out) both; }
+@keyframes rv-build { to { transform: scale(0.84); filter: brightness(0.82); } }
+.rv-champion { text-align: center; animation: rv-champ 760ms var(--ease-out-expo) both; }
+@keyframes rv-champ { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: none; } }
+.rv-board .rb-row { animation: rv-row 420ms var(--ease-out-expo) both; }
+.rv-board .rb-row:nth-child(1) { animation-delay: 40ms; }
+.rv-board .rb-row:nth-child(2) { animation-delay: 120ms; }
+.rv-board .rb-row:nth-child(3) { animation-delay: 200ms; }
+.rv-board .rb-row:nth-child(4) { animation-delay: 280ms; }
+@keyframes rv-row { from { opacity: 0; transform: translate3d(0, 18px, 0); } to { opacity: 1; transform: none; } }
+html[data-motion="simplified"] .rv-gather .rv-orb,
+html[data-motion="simplified"] .rv-build .rv-orbs,
+html[data-motion="simplified"] .rv-champion,
+html[data-motion="simplified"] .rv-board .rb-row,
+html[data-motion="reduced"] .rv-gather .rv-orb,
+html[data-motion="reduced"] .rv-build .rv-orbs,
+html[data-motion="reduced"] .rv-champion,
+html[data-motion="reduced"] .rv-board .rb-row { animation: none; opacity: 1; transform: none; }
+
+/* ═══ 降级与暂停 ═══ */
+/* 简化档：停掉装饰循环，但材质必须仍然可见（这是「静止截图也要有构图」的前提） */
+html[data-motion="simplified"] .ink-field .wash,
+html[data-motion="simplified"] .ink-field .grain,
+html[data-motion="simplified"] .ink-mat .mat-layer,
+html[data-motion="simplified"] .ink-mat .mat-sheen::after { animation: none; }
+html[data-motion="simplified"] .ink-mat .mat-bleed { opacity: 0.6; transform: none; }
+html[data-motion="simplified"] .ink-mat .mat-flow { opacity: 0.52; transform: none; }
+html[data-motion="simplified"] .ink-mat .mat-deep { opacity: 0.62; transform: none; }
+html[data-motion="simplified"] .ink-mat .mat-fine { opacity: 0.5; transform: none; }
+html[data-motion="simplified"] .ink-mat .mat-glyph { opacity: 0.72; transform: none; }
+html[data-motion="simplified"] .ink-mat .mat-sheen::after { opacity: 0.4; }
+html[data-motion="reduced"] .ink-field { display: none; }
+html[data-motion="reduced"] .ink-mat .mat-layer,
+html[data-motion="reduced"] .ink-mat .mat-sheen { display: none; }
+html[data-motion="reduced"] .ink-mat .mat-bleed { opacity: 0.6; transform: none; }
+html[data-motion="reduced"] .ink-mat .mat-flow { opacity: 0.52; transform: none; }
+html[data-motion="reduced"] .ink-mat .mat-deep { opacity: 0.62; transform: none; }
+html[data-motion="reduced"] .ink-mat .mat-fine { opacity: 0.5; transform: none; }
+html[data-motion="reduced"] .ink-mat .mat-glyph { opacity: 0.72; transform: none; }
+html.motion-paused .ink-field .wash,
+html.motion-paused .ink-field .grain,
+html.motion-paused .ink-mat .mat-layer,
+html.motion-paused .ink-mat .mat-sheen::after { animation-play-state: paused; }
+/* 离屏暂停：卡片离开视口 → 停掉该卡装饰层 */
+.ink-mat.paused .mat-layer, .ink-mat.paused .mat-sheen::after { animation-play-state: paused; }
+
+/* 系统级减弱动效：保留可用性与即时反馈，停掉持续流动 */
+@media (prefers-reduced-motion: reduce) {
+  :root { --vt-dur: 1ms; --dur-page: 1ms; --dur-expand: 1ms; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation-duration: 1ms; }
+  .ink-field { display: none; }
+  .ink-mat .mat-layer, .ink-mat .mat-sheen::after { animation: none; }
+  .ink-mat .mat-bleed { opacity: 0.6; transform: none; }
+  .ink-mat .mat-flow { opacity: 0.52; transform: none; }
+  .ink-mat .mat-deep { opacity: 0.62; transform: none; }
+  .ink-mat .mat-fine { opacity: 0.5; transform: none; }
+  .ink-mat .mat-glyph { opacity: 0.72; transform: none; }
+  .reveal { opacity: 1; transform: none; animation: none; }
+}
+

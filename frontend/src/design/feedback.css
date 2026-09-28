@@ -1,0 +1,45 @@
+/* 反馈补充：视觉抬升用 translate，按压 transform 继续由既有 motion.ts 管理。 */
+.app-shell :is(.btn, .icon-btn, .mode-switch button, .tab-item, .opt, .cs-action) {
+  transition: translate var(--dur-small) var(--ease-out), background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out), transform var(--dur-small) var(--ease-out);
+}
+.app-shell :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 4px;
+}
+.app-shell :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+}
+.app-shell :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus-visible {
+  border-color: var(--accent-line-strong);
+  box-shadow: 0 0 0 3px var(--accent-deep);
+}
+.app-shell :is(.btn, .icon-btn, .mode-switch button, .tab-item, .opt, .cs-action):not(:disabled):not([aria-disabled="true"]):active {
+  translate: 0 1px;
+  transition-duration: 90ms;
+}
+.app-shell :is(.btn, .icon-btn, .mode-switch button, .tab-item, .opt, .cs-action):disabled,
+.app-shell [aria-disabled="true"] { cursor: not-allowed; translate: none; }
+.app-shell .btn > svg { transition: translate var(--dur-fast) var(--ease-out); }
+.app-shell .brand { transition: opacity var(--dur-fast) ease; }
+.app-shell .brand:hover { opacity: .8; }
+.app-shell :is(.note a, .auth-link, footer a) { text-underline-offset: 5px; text-decoration-thickness: 1px; }
+.app-shell :is(.note a, .auth-link, footer a):hover { text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) {
+  .app-shell :is(.btn, .cs-action):not(:disabled):not([aria-disabled="true"]):hover {
+    translate: 0 -2px;
+    box-shadow: 0 5px 14px rgba(0, 0, 0, .12);
+  }
+  .app-shell .btn:not(:disabled):not([aria-disabled="true"]):hover > svg { translate: 2px 0; }
+  .app-shell .icon-btn:not(:disabled):hover { border-color: var(--line-2); background: var(--bg-panel-2); }
+  .app-shell .mode-switch button:not(.on):hover { background: var(--bg-panel-2); color: var(--ink-1); }
+  .app-shell .opt:not(:disabled):hover { border-color: var(--accent-line-strong); translate: 2px 0; }
+}
+html[data-motion="reduced"] .app-shell :is(.btn, .icon-btn, .mode-switch button, .tab-item, .opt, .cs-action, .btn > svg) {
+  translate: none;
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell :is(.btn, .icon-btn, .mode-switch button, .tab-item, .opt, .cs-action, .btn > svg) { translate: none; transition: none; }
+}

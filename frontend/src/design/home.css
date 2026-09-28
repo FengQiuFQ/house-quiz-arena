@@ -1,0 +1,228 @@
+/* 首页：纸面引入 → 深墨章节。所有规则限定在首页，沿用业务组件。 */
+.home-page {
+  --home-paper: #e8ebe3;
+  --home-ink: #17251d;
+  --home-line: rgba(208, 226, 214, .18);
+  position: relative;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  background: var(--home-paper);
+}
+/* hidden 会建立额外滚动容器，clip 保留视口 sticky 的参照。 */
+body:has(.home-page) { overflow-x: clip; overflow-y: visible; }
+body:has(.home-page) .topbar {
+  border-radius: 10px;
+  box-shadow: none;
+  background: var(--bg-page);
+  transition: background-color 280ms ease, box-shadow 280ms ease;
+}
+body:has(.home-page) .topbar[data-home-scrolled="true"] {
+  background: rgba(10, 19, 14, .95);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .12);
+}
+body:has(.home-page) .topbar .btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--ink-on-light);
+  box-shadow: none;
+}
+.home-page .ink-intro .btn {
+  color: var(--home-ink);
+  border-color: #879489;
+  background: transparent;
+  box-shadow: none;
+}
+.home-page .ink-intro .btn:hover { background: #dce2d8; border-color: #526157; }
+.home-page .ink-intro .btn-primary { color: #f1f3eb; background: #234b38; border-color: #234b38; }
+.home-page .ink-intro .btn-primary:hover { color: #f1f3eb; background: #172f24; border-color: #172f24; }
+.home-page .ink-intro .btn:focus-visible { outline-color: #234b38; }
+.home-content {
+  position: relative;
+  z-index: 2;
+  margin-top: -24px;
+  padding: 56px max(32px, calc((100% - 1240px) / 2)) 0;
+  border-radius: 32px 32px 0 0;
+  background: var(--bg-page);
+  color: var(--ink-1);
+  isolation: isolate;
+}
+.home-content::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-image: var(--soft-noise-url);
+  opacity: .08;
+  pointer-events: none;
+}
+.home-section-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--home-line);
+  font: 400 11px/1.6 var(--font-mono);
+  letter-spacing: .16em;
+  color: var(--ink-2);
+}
+.home-page .live-strip { border: 0; border-radius: 0; margin-top: 0; background: none; gap: 0; }
+.home-page .live-strip > div { background: none; padding: 30px 24px; border-right: 1px solid var(--home-line); }
+.home-page .live-strip > div:first-child { padding-left: 0; }
+.home-page .live-strip > div:last-child { border: 0; }
+.home-page .live-strip dd { font-family: var(--font-display); font-size: 38px; font-weight: 400; margin-top: 8px; }
+.home-page .live-strip dt { color: var(--ink-2); }
+.home-page .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--ink-on-light); box-shadow: none; }
+.home-page .btn-primary:hover { background: var(--ink-1); border-color: var(--ink-1); }
+.home-page .comp-banner { border-radius: 12px; background: var(--bg-panel); box-shadow: none; }
+.home-page .home-chapter {
+  display: grid;
+  grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr);
+  gap: clamp(40px, 7vw, 108px);
+  margin-top: 0;
+  padding: 72px 0;
+  border-bottom: 1px solid var(--home-line);
+}
+.chapter-caption { align-self: start; }
+.home-page[data-scroll-motion="full"] .chapter-caption { position: sticky; top: calc(var(--nav-h) + 62px); }
+.chapter-index { display: block; margin-bottom: 26px; color: var(--ink-3); font: 400 11px/1.6 var(--font-mono); letter-spacing: .16em; }
+.chapter-caption h2, .home-page .chapter-caption .section-title {
+  font: 400 clamp(30px, 3.5vw, 50px)/1.5 var(--font-display);
+  letter-spacing: -.035em;
+  margin: 0 0 22px;
+  color: var(--ink-1);
+}
+.chapter-caption h2 em { color: var(--ink-2); font-style: normal; }
+.chapter-caption p { color: var(--ink-2); font-size: 14px; line-height: 1.9; }
+.chapter-link { display: inline-flex; align-items: center; gap: 24px; min-height: 44px; margin-top: 22px; border-bottom: 1px solid var(--home-line); color: var(--accent); font-size: 14px; }
+.chapter-link svg { transition: transform 220ms var(--ease-out); }
+.chapter-link:hover svg { transform: translateX(4px); }
+.chapter-track { display: block; height: 1px; max-width: 170px; margin-top: 42px; background: var(--home-line); overflow: hidden; }
+.chapter-track i { display: block; height: 100%; background: var(--accent); transform-origin: left; transform: scaleX(var(--chapter-progress, 0)); }
+.chapter-body { min-width: 0; }
+.home-page .standings { margin: 0; padding: 0; }
+.home-page .sd-head { align-items: start; gap: 18px; }
+.home-page .sd-title { font-size: 26px; font-weight: 400; }
+.home-page .sd-tabs { gap: 6px; flex-wrap: wrap; }
+.home-page .sd-tabs .btn { padding-inline: 12px; font-size: 12px; }
+.home-page .info-box { border-color: var(--home-line); border-radius: 12px; background: var(--bg-panel); box-shadow: none; padding: 28px; }
+.home-page .house-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 28px; gap: 20px; }
+.home-page .house-card { border-radius: 14px; border-color: var(--home-line); background: var(--bg-panel); box-shadow: none; }
+.home-page .house-card .hc-inner { min-height: 260px; }
+.home-page .house-card-top { padding: 24px; }
+.home-page .house-name-cn { font-size: 30px; font-weight: 400; }
+.home-page .house-name-en { display: block; margin-top: 6px; font-weight: 400; }
+.home-page .house-card .hc-main { padding: 12px 24px 0; background: var(--band); }
+.home-page .house-card .hc-foot { padding: 16px 24px; background: var(--band); margin-top: 0; }
+.home-page .house-card[data-in-view="true"] { border-color: var(--line-2); }
+.home-page .house-card:hover { border-color: var(--hc); }
+.home-page .home-recent { margin-top: 0; padding: 64px 0; }
+.home-page .home-recent .section-head { align-items: end; border-color: var(--home-line); padding-bottom: 24px; }
+.home-page .home-recent .chapter-index { margin-bottom: 12px; }
+.home-page .home-recent .section-title { font-weight: 400; margin: 0; font-size: 38px; }
+.section-aside { margin-left: auto; color: var(--ink-3); font-size: 13px; }
+.home-page .panel-card { padding: 28px; border-radius: 12px; border-color: var(--home-line); background: var(--bg-panel); box-shadow: none; height: 100%; }
+.home-page .panel-card:hover { border-color: var(--home-line); box-shadow: none; }
+.home-page .panel-card h3 { font: 400 24px/1.5 var(--font-display); }
+.home-page .match-row { grid-template-columns: 1fr; gap: 18px; padding: 20px 0; background: none; border-width: 0 0 1px; border-radius: 0; }
+.home-page .match-row .btn { justify-self: start; }
+.home-page .match-results { gap: 12px; }
+.home-page .match-res { flex-wrap: wrap; }
+.home-page .match-empty { border-color: var(--home-line); padding: 28px 18px; }
+@media (max-width: 899px) {
+  .home-content { padding: 36px 24px 0; border-radius: 24px 24px 0 0; }
+  .home-page .home-chapter { grid-template-columns: 1fr; gap: 32px; padding: 64px 0; }
+  .chapter-caption h2, .home-page .chapter-caption .section-title { font-size: 36px; }
+  .chapter-track { display: none; }
+  .home-page .home-rules .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-page .house-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .home-page .house-card-top { padding: 22px; }
+  .home-page .house-card .hc-main { padding: 20px 22px 0; }
+  .home-page .house-card .hc-foot { padding: 16px 22px; }
+  .home-page .house-card .hc-inner { min-height: 250px; }
+  .home-page .home-recent { padding: 64px 0; }
+}
+@media (max-width: 599px) {
+  .home-content { padding-inline: 20px; }
+  .home-section-label { font-size: 10px; letter-spacing: .08em; }
+  .home-page .live-strip > div { padding: 22px 14px; border-bottom: 1px solid var(--home-line); }
+  .home-page .live-strip > div:nth-child(odd) { padding-left: 0; }
+  .home-page .live-strip > div:nth-child(even) { border-right: 0; }
+  .home-page .live-strip dd { font-size: 30px; }
+  .home-page .home-rules .feature-grid, .home-page .house-grid { grid-template-columns: 1fr; }
+  .home-page .home-chapter { padding-block: 52px; }
+  .chapter-caption h2, .home-page .chapter-caption .section-title { font-size: 30px; }
+  .home-page .sd-head { flex-direction: column; }
+  .home-page .panel-card, .home-page .info-box { padding: 22px; }
+  .home-page .home-recent .section-title { font-size: 30px; }
+  .section-aside { display: none; }
+  .home-page .house-card .hc-inner { min-height: 250px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body:has(.home-page) .topbar, .chapter-link svg, .home-page .feature { transition: none; }
+}
+html[data-motion="reduced"] .home-page .feature { transition: none; }
+
+/* 下半页以实际任务与记录为主。 */
+.home-entry-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; padding-top: 22px; }
+.home-entry-links button { display: flex; align-items: center; justify-content: space-between; gap: 20px; background: none; border: 0; border-bottom: 1px solid var(--home-line); color: var(--ink-1); padding: 18px 0; text-align: left; cursor: pointer; }
+.home-entry-links b { display: block; font: 500 22px/1.5 var(--font-display); }
+.home-entry-links small { display: block; margin-top: 6px; color: var(--ink-2); font-size: 13px; line-height: 1.7; }
+.home-entry-links svg { color: var(--accent); flex-shrink: 0; transition: transform 180ms ease; }
+.home-entry-links button:hover { border-color: var(--accent); }
+.home-entry-links button:hover svg { transform: translateX(4px); }
+.home-entry-links button:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+.home-practice-note { display: flex; justify-content: space-between; gap: 16px; color: var(--ink-2); padding: 28px 0; border-bottom: 1px solid var(--home-line); font-size: 14px; }
+.home-page .home-process { padding: 64px 0; margin: 0; border-bottom: 1px solid var(--home-line); }
+.home-process .section-head { margin-bottom: 28px; }
+.home-process .section-title { font: 400 32px/1.4 var(--font-display); }
+.entry-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; list-style: none; padding: 0; margin: 0; }
+.entry-journey { position: relative; isolation: isolate; overflow: hidden; padding: 28px; border: 1px solid var(--home-line); border-radius: 14px; background: var(--bg-panel); }
+.entry-journey > .ink-mat { opacity: .4; }
+.entry-journey .entry-steps { position: relative; z-index: 1; }
+.entry-steps li { border-left: 1px solid var(--home-line); padding-left: 22px; }
+.entry-steps li:first-child { border-left: 0; padding-left: 0; }
+.entry-steps .num { font-size: 13px; color: var(--accent); }
+.entry-steps h3 { font: 500 20px/1.5 var(--font-display); margin: 12px 0 8px; }
+.entry-steps p { color: var(--ink-2); font-size: 14px; line-height: 1.85; margin: 0; }
+.home-rules-detail { margin-top: 28px; color: var(--ink-2); font-size: 13px; }
+.home-rules-detail summary { cursor: pointer; padding: 12px 0; width: fit-content; }
+.home-rules-detail summary:hover { color: var(--ink-1); }
+.home-rules-detail summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.home-rules-detail p { max-width: 76ch; line-height: 1.85; margin-top: 8px; }
+.home-page .home-houses { padding: 64px 0; margin: 0; border-bottom: 1px solid var(--home-line); }
+.home-page .home-houses .chapter-caption { position: static; display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8px 24px; }
+.home-houses .chapter-index { grid-column: 1 / -1; margin-bottom: 8px; }
+.home-page .home-houses .chapter-caption .section-title { font-size: 32px; margin: 0; }
+.home-houses .chapter-caption p { margin: 0; font-size: 13px; }
+.home-houses .chapter-track { display: none; }
+.home-record-list .panel-card { border: 0; padding: 0; border-radius: 0; background: transparent; }
+.home-record-list .match-row { display: grid; grid-template-columns: 1.2fr 1fr auto; align-items: center; gap: 24px; padding: 22px 0; }
+.home-record-list .match-row .btn { justify-self: end; }
+.home-record-list .match-results { display: flex; flex-wrap: wrap; }
+.home-record-list .match-res { display: flex; align-items: center; gap: 10px; }
+@media (max-width: 899px) {
+  .entry-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+  .home-record-list .match-row { grid-template-columns: 1fr auto; }
+  .home-record-list .match-results { grid-row: 2; }
+  .home-record-list .match-row .btn { grid-column: 2; grid-row: 1 / 3; }
+}
+@media (max-width: 599px) {
+  .home-entry-links { grid-template-columns: 1fr; gap: 0; }
+  .home-practice-note { flex-direction: column; gap: 8px; }
+  .home-page .home-houses .chapter-caption { display: block; }
+  .home-houses .chapter-caption p { margin-top: 12px; }
+  .home-page .home-process, .home-page .home-houses { padding: 44px 0; }
+  .entry-steps { gap: 24px 18px; }
+  .entry-steps h3 { font-size: 18px; }
+  .entry-steps p { font-size: 13px; }
+  .home-record-list .match-row { grid-template-columns: 1fr; gap: 14px; }
+  .home-record-list .match-row .btn { grid-column: auto; grid-row: auto; justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) { .home-entry-links svg { transition: none; } }
+
+@media (max-width: 899px) { .entry-steps li:nth-child(odd) { border-left: 0; padding-left: 0; } }
+@media (max-width: 599px) { .entry-journey { padding: 22px 18px; } .entry-steps li { padding-left: 14px; } }
+

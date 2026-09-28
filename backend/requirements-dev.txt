@@ -1,0 +1,14 @@
+# 本地开发/测试依赖（Windows 本机 Python 3.14）。
+# 注意：不含 asyncpg（本机无对应 wheel，且测试用 aiosqlite）；生产容器内用 requirements.txt。
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+sqlalchemy==2.0.36
+greenlet==3.1.1
+alembic==1.14.0
+pydantic==2.10.3
+pydantic-settings==2.7.0
+bcrypt==4.2.1
+aiosqlite==0.20.0
+pytest==8.3.4
+pytest-asyncio==0.25.0
+httpx==0.28.1

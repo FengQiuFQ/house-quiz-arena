@@ -1,0 +1,10 @@
+.git
+.env
+backend
+contracts
+docs
+**/node_modules
+**/dist
+**/__pycache__
+**/*.db
+**/*.log

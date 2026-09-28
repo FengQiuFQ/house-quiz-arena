@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" width="1280" height="320" role="img" aria-label="HouseQuiz Arena 四院知识竞赛系统">
+  <title>HouseQuiz Arena 四院知识竞赛系统</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08120F"/>
+      <stop offset="1" stop-color="#0F1E17"/>
+    </linearGradient>
+    <radialGradient id="glowGreen" cx="0.12" cy="0.1" r="0.7">
+      <stop offset="0" stop-color="#3AA37A" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#3AA37A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowWarm" cx="0.95" cy="0.9" r="0.8">
+      <stop offset="0" stop-color="#C97A50" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#C97A50" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCool" cx="0.85" cy="0.05" r="0.7">
+      <stop offset="0" stop-color="#5C7AA8" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#5C7AA8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1280" height="320" fill="url(#bg)"/>
+  <rect width="1280" height="320" fill="url(#glowGreen)"/>
+  <rect width="1280" height="320" fill="url(#glowCool)"/>
+  <rect width="1280" height="320" fill="url(#glowWarm)"/>
+
+  <g fill="none" stroke="#9BE5C5" stroke-opacity="0.10" stroke-width="2">
+    <path d="M0 244C180 214 300 286 470 258S760 196 980 236s220 24 300 2"/>
+    <path d="M0 274C220 250 360 300 560 280s340-44 500-16 170 16 220 6" stroke-opacity="0.06"/>
+  </g>
+
+  <g transform="translate(84 84) scale(0.66)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M29 36 102 17l74 19" stroke="#9BE5C5" stroke-width="7"/>
+    <path d="M29 52h147M38 67h128" stroke="#F4F7F2" stroke-width="7"/>
+    <path d="M43 135v-29c0-11 7-18 18-18s18 7 18 18v29M85 135v-29c0-11 7-18 18-18s18 7 18 18v29M127 135v-29c0-11 7-18 18-18s18 7 18 18v29" stroke="#F4F7F2" stroke-width="7"/>
+    <path d="M31 150h142" stroke="#F4F7F2" stroke-width="7"/>
+  </g>
+
+  <g font-family="Inter, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei UI', sans-serif">
+    <text x="248" y="158" fill="#F2F7F1" font-size="54" font-weight="700" letter-spacing="-1">HouseQuiz Arena</text>
+    <text x="252" y="202" fill="#9BE5C5" font-size="23" font-weight="600" letter-spacing="8">四院知识竞赛系统</text>
+    <text x="252" y="240" fill="#A9B8AD" font-size="16" letter-spacing="2.6">实时答题 · 观赛投屏 · 统一揭晓 · 水墨界面</text>
+  </g>
+
+  <line x1="872" y1="88" x2="872" y2="272" stroke="#DCE6DC" stroke-opacity="0.12"/>
+
+  <g font-family="Inter, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei UI', sans-serif">
+    <g>
+      <circle cx="912" cy="102" r="5" fill="#DCE0E3"/>
+      <text x="934" y="108" fill="#E8EEE7" font-size="18" font-weight="600">白虎</text>
+      <text x="934" y="128" fill="#8FA096" font-size="11.5" letter-spacing="1.6">WHITE TIGER</text>
+    </g>
+    <g>
+      <circle cx="912" cy="154" r="5" fill="#5FBF9E"/>
+      <text x="934" y="160" fill="#E8EEE7" font-size="18" font-weight="600">青龙</text>
+      <text x="934" y="180" fill="#8FA096" font-size="11.5" letter-spacing="1.6">AZURE DRAGON</text>
+    </g>
+    <g>
+      <circle cx="912" cy="206" r="5" fill="#8FB4C9"/>
+      <text x="934" y="212" fill="#E8EEE7" font-size="18" font-weight="600">玄武</text>
+      <text x="934" y="232" fill="#8FA096" font-size="11.5" letter-spacing="1.6">BLACK TORTOISE</text>
+    </g>
+    <g>
+      <circle cx="912" cy="258" r="5" fill="#E08A5E"/>
+      <text x="934" y="264" fill="#E8EEE7" font-size="18" font-weight="600">朱雀</text>
+      <text x="934" y="284" fill="#8FA096" font-size="11.5" letter-spacing="1.6">VERMILION BIRD</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mgus
+      POSTGRES_DB: mgus
+      POSTGRES_PASSWORD: ${MGUS_DB_PASSWORD:?Set MGUS_DB_PASSWORD in .env}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mgus -d mgus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  init:
+    build: ./backend
+    restart: "no"
+    command: ["sh", "-c", "alembic upgrade head && python scripts/seed.py"]
+    environment:
+      MGUS_DATABASE_URL: postgresql+asyncpg://mgus:${MGUS_DB_PASSWORD:?Set MGUS_DB_PASSWORD in .env}@db:5432/mgus
+      MGUS_SEED_ADMIN_PASSWORD: ${MGUS_SEED_ADMIN_PASSWORD:?Set MGUS_SEED_ADMIN_PASSWORD in .env}
+      MGUS_SKIP_DDL: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      MGUS_DATABASE_URL: postgresql+asyncpg://mgus:${MGUS_DB_PASSWORD:?Set MGUS_DB_PASSWORD in .env}@db:5432/mgus
+      MGUS_ALLOWED_ORIGINS: ${MGUS_ALLOWED_ORIGINS:?Set MGUS_ALLOWED_ORIGINS in .env}
+      MGUS_COOKIE_SECURE: ${MGUS_COOKIE_SECURE:-false}
+      MGUS_SKIP_DDL: "1"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HOUSEQUIZ_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  db_data:

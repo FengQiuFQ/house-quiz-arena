@@ -1,0 +1,670 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   设计 token — 单一事实来源（视觉语言：深墨基底 · 彩色水墨 · 局部液态玻璃 · 编辑式排版）
+
+   对比度**全部实测**（脚本 _verify/bgcontrast.cjs 在真实合成像素上取样；_verify/audit.cjs 复核）：
+     文本（WCAG 1.4.3，要求 ≥ 4.5:1）
+       主文字 16.95 / 次文字 9.10 / 三级 6.55 / 强调 11.25  （on 页面底）
+       主文字 15.41 / 次文字 8.27 / 三级 5.96 / 强调 10.22  （on 内容底）
+     非文本（WCAG 1.4.11，要求 ≥ 3:1）——本轮修正项，修正前仅 1.6–1.8:1
+       控件/卡片描边 --line-2 ≥ 3.1:1 · 强调描边 --line-3 ≥ 4.6:1 · 焦点环 ≥ 4.4:1
+     四院示意色（on 内容底）：白虎 11.46 / 青龙 7.91 / 玄武 8.00 / 凤凰 6.68
+   本文件只定义值；布局在 app.css，动效在 motion.css。禁止在页面里写裸色值与临时覆盖。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 基色：深墨 ── */
+  --bg-page: #080f0d;          /* 页面背景 */
+  --bg-panel: #111b17;         /* 内容底层 */
+  --bg-panel-2: #16221c;       /* 内容底层（上一级） */
+  --bg-well: #0c1512;          /* 内嵌槽位 */
+  --bg-glass: rgba(22, 34, 28, 0.66); /* 液态玻璃（仅用于导航/浮动/局部面板/弹窗） */
+
+  /* ── 文字 ── */
+  --ink-1: #edf1eb;
+  --ink-2: #a8b5ac;
+  --ink-3: #8a9a90;
+  --ink-on-light: #0a120e;     /* 浅色水墨底上的文字 */
+
+  /* ── 线/描边（非文本对比度 ≥ 3:1，见文件头实测表；alpha 经浏览器实测标定）── */
+  --line-1: rgba(237, 241, 235, 0.11);  /* 分隔线：纯装饰，不承担识别职责 */
+  --line-2: rgba(237, 241, 235, 0.42);  /* 控件/卡片轮廓：3.7:1（页面底）/ 3.7:1（内容底）*/
+  --line-3: rgba(237, 241, 235, 0.58);  /* 强调轮廓 / 悬停态：≥5:1 */
+
+  /* ── 强调与状态 ── */
+  --accent: #8fd4ae;
+  --accent-deep: #12301f;
+  /* 强调按钮描边：over #12301F 实测 3.65:1（浅一档的强调色，而不是低 alpha 的同一个色） */
+  --accent-line: rgba(169, 227, 198, 0.55);
+  --accent-line-strong: rgba(169, 227, 198, 0.95);
+  --state-ok: #6fd3a0;
+  --state-warn: #d9a441;
+  --state-err: #e0847a;
+  --state-err-bg: rgba(224, 132, 122, 0.1);
+  --state-ok-bg: rgba(111, 211, 160, 0.1);
+
+  /* ── 字体：本地字体栈，无外部依赖；中文承担阅读，西文用于 House 名与标识 ──
+     行高随字号变化（大字收紧、小字放松）—— 这是编辑式排版的基本要求，
+     不是给每个元素套同一个 line-height。字号只有 8 档，禁止临时插入中间值。 */
+  --font-sans: "Inter", -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto,
+    "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  /* ═══ 排版语言：大标题走衬线（原始方案，2026-09-26 恢复）═══════════════════════
+     方向是 editorial / austere / typographic：**大标题衬线 + 标签数字等宽 + 正文无衬线**。
+     三者并置才有"编辑排版"的层次；全站一套无衬线 + 全圆角卡片正是"看起来像模板"的来源。
+     字体纪律：单屏只有这三种角色，不再引入第四种。
+
+     ── 这一行中间被改错过一次，记录清楚，免得再被人"修"回去 ──────────────────
+     曾经的"修正"声称：`"Noto Serif SC"` 在本机没装却**幻影命中**，回退链在它那里断掉，
+     所以要把 SimSun 提到它前面。**这个结论是错的**，它建立在一个不可靠的判据上：
+
+       判据用的是「canvas 量中文字宽是否与 sans-serif 不同」。但 **CJK 汉字在绝大多数
+       CJK 字体里都是 1em 满宽**，所以微软雅黑与 Noto Serif SC 量出来**同样宽**
+       （12 个字都是 598），这个方法根本区分不了这两个字体 ——
+       它把"两个都是 1em 的中文字体"误读成了"后者没生效"。
+
+     换成直接读渲染结果的判据（CDP `CSS.getPlatformFontsForNode`，见 _verify/typecheck.cjs
+     与 _verify/probe_font_available.cjs）之后，事实是：
+
+       "Noto Serif SC"      → 渲染为 Noto Serif SC   ✅ 已安装
+       "Source Han Serif SC"→ 渲染为 Microsoft YaHei  ❌ 未安装
+       "SimSun" / "NSimSun" → 渲染为 SimSun / NSimSun ✅ 已安装
+       "FangSong" / "KaiTi" → 各自生效                ✅ 已安装
+       "Songti SC" / "PingFang SC" / "STSong"         ❌ 未安装
+
+     于是"把 SimSun 提到 Noto Serif SC 前面"唯一的实际效果是：
+     **标题从 Noto Serif SC 换成了 SimSun** —— 而 SimSun 是给 12–16px 屏幕正文设计的，
+     放到 46px 大标题上笔画发脏、字重只能靠合成加粗。实测对照图见
+     `_verify/out/font-options-v2.png`（第 1 行 Noto Serif SC vs 第 2 行 SimSun）。
+
+     所以恢复成：**CJK 衬线（能真正命中的）＋ 西文衬线打头**。
+     顺序说明：Georgia 在前处理拉丁字符，中文逐字回退到 Noto Serif SC —— Chromium 是
+     逐字形回退，不存在"西文在前就把中文顶掉"这回事（那也是一条被实测推翻的说法）。 */
+  --font-display: Georgia, "Noto Serif SC", "Source Han Serif SC", "Songti SC",
+    SimSun, NSimSun, "Times New Roman", serif;
+  /* ── 两条被实测推翻的旧结论（留在这里，是因为它们看起来都很有道理）──────
+     ① 「西文字体排在 CJK 之前会把中文顶成黑体」—— **不成立**。
+        Chromium 是**逐字形回退**：Georgia 处理拉丁字母，汉字找不到就继续往后找，
+        交给 Noto Serif SC。当前栈正是 `Georgia, "Noto Serif SC", …`，实测标题渲染为
+        Noto Serif SC（见 _verify/typecheck.cjs 的 platform fonts 输出）。
+        当年之所以看到"中文是黑体"，真因是栈里那个 CJK 衬线当时没被选中，
+        而不是"被 Georgia 顶掉了"。
+
+     ② 「`"Noto Serif SC"` 幻影命中、挡住了后面的 SimSun」—— **不成立**。
+        它在本机**确实装了、确实在渲染**。误判来自判据本身：用 canvas 量中文字宽，
+        而 CJK 汉字基本都是 1em 满宽，雅黑与 Noto Serif SC 量出来一样宽 →
+        把"两个都是 1em 的中文字体"读成了"后者没生效"。
+
+     真正要守的规则只有一条（typecheck.cjs 现在守的就是它）：
+     **CSS 里声明的字体家族必须在实际渲染中真的生效** —— 判据必须读渲染结果
+     （CDP `CSS.getPlatformFontsForNode`），不能靠字宽推断。 */
+  --font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, "SFMono-Regular",
+    "Noto Sans Mono", monospace;
+
+  /* 模块化字号刻度：50 · 38 · 28 · 22 · 17 · 15.5 · 13.5 · 12
+     `--fs` 是**统一倍率**：桌面为 1，希沃大屏档为 1.9（见文件末尾的 display 档）。
+     整套刻度乘以同一个系数，比例关系不变——所以不存在"某一档在大屏上失配"的情况。
+     固定字号也用 calc(var(--fs) * Npx) 参与倍率，否则大屏上会出现 12px 与 23px 并存的断裂。 */
+  --fs: 1;
+  --fs-display: clamp(calc(var(--fs) * 32px), calc(var(--fs) * 3.6vw), calc(var(--fs) * 50px));
+  --lh-display: 1.12;                      /* 页题 */
+  --fs-h1: clamp(calc(var(--fs) * 26px), calc(var(--fs) * 2.6vw), calc(var(--fs) * 38px));
+  --lh-h1: 1.2;                            /* 区块主标题 */
+  --fs-h2: clamp(calc(var(--fs) * 21px), calc(var(--fs) * 1.9vw), calc(var(--fs) * 28px));
+  --lh-h2: 1.22;                           /* 卡片名 / 区块 */
+  --fs-h3: clamp(calc(var(--fs) * 18px), calc(var(--fs) * 1.4vw), calc(var(--fs) * 22px));
+  --lh-h3: 1.3;                            /* 小节 */
+  --fs-lead: calc(var(--fs) * 17px);       --lh-lead: 1.6;   /* 引文 */
+  --fs-body: calc(var(--fs) * 16px);       --lh-body: 1.65;  /* 正文（Skill：基准 16px） */
+  --fs-sm: calc(var(--fs) * 13.5px);       --lh-sm: 1.55;    /* 辅助 */
+  --fs-xs: calc(var(--fs) * 12px);         --lh-xs: 1.5;     /* 标签/脚注 */
+  /* 希沃大屏下 12px 的标签按 1.9 倍到 22.8px，已远超 3–6m 观看下限（原设计 28px 针对主内容）。 */
+  /* ═══ 双界面视觉身份（日常冷系 / 竞赛暖系）═══════════════════════════════════
+     两个模式的差别必须**一眼可辨**，而不是只换文案：
+
+       日常操练（data-mode="daily"）—— **冷色系**
+         墨绿近黑底 + 低饱和青绿强调色；氛围"安静自习、刷题上榜"
+         参考情绪：图书馆夜读、清冷专注
+       正式竞赛（data-mode="comp"）—— **暖色系**
+         棕黑暖底 + 橙金强调色；氛围"赛场、聚光灯、紧张热烈"
+         参考情绪：体育馆夜场灯光、颁奖台
+
+     做法：把模式写到 <html data-mode>，由 CSS 重映射**语义 token**。
+     组件里没有一处 `if (mode === ...)`：加新组件自动继承两套皮肤，
+     也不会漏掉某个角落（按钮、表格、提示条全部经由这些 token 取色）。
+
+     所有取值都按 ≥4.5:1 对各自底色核对过（实测见 _verify/dualskin.cjs）：
+       竞赛 accent #ff9640 对暖底 7.7–8.8:1；暖底 ink-2 #bdb2a4 对面板 8.6:1。 */
+  --warm-page: #12100c;
+  --warm-panel: #1a1712;
+  --warm-panel-2: #221d16;
+  --warm-ink-1: #f2ece3;
+  --warm-ink-2: #bdb2a4;
+  --warm-ink-3: #9a8f80;
+  --warm-accent: #ff9640;
+  --warm-accent-deep: #3a2109;
+  --warm-accent-line: rgba(255, 150, 64, 0.5);
+  --warm-accent-line-strong: rgba(255, 150, 64, 0.95);
+
+  /* 模式相关 token（默认值 = 竞赛的冷色，与既有设计一致，避免影响其它页面） */
+  --mode-page: var(--bg-page);
+  --mode-panel: var(--bg-panel);
+  --mode-panel-2: var(--bg-panel-2);
+  --mode-accent: var(--accent);
+  --mode-accent-deep: var(--accent-deep);
+  --mode-accent-line: var(--accent-line);
+  --mode-accent-line-strong: var(--accent-line-strong);
+
+  --tracking-label: 0.16em;
+  --tracking-display: -0.022em;
+  --tracking-title: -0.012em;
+
+  /* 数字与西文标识用等宽，保证成绩列对齐、辨识度更高 */
+  --font-figure: var(--font-mono);
+
+  /* ── 网格与间距（8 的倍数；--gap 供同一节内统一节奏）──
+     密度按 Skill 的 Density 8/10（dense）收紧：区块间距 44–76 → 32–56，
+     让一屏能装下更多信息，而不是靠留白撑版面。 */
+  --container: 1320px;
+  /* 大屏档容器的重算值（见文件末尾 display 档）：由 --fs 推导，保证与字号同步放大 */
+  --container-max: calc(var(--container) * var(--fs));
+  --pad-x: clamp(calc(var(--fs) * 18px), calc(var(--fs) * 3.2vw), calc(var(--fs) * 32px));
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: calc(24px * var(--sp-k, 1)); --sp-6: calc(32px * var(--sp-k, 1));
+  --sp-7: calc(48px * var(--sp-k, 1)); --sp-8: calc(64px * var(--sp-k, 1));
+  --sp-9: calc(88px * var(--sp-k, 1));
+  --gap-card: clamp(calc(var(--sp-k, 1) * 14px), calc(var(--sp-k, 1) * 1.5vw), calc(var(--sp-k, 1) * 20px));
+  --section-gap: clamp(calc(var(--sp-k, 1) * 32px), calc(var(--sp-k, 1) * 3.6vw), calc(var(--sp-k, 1) * 56px));
+  /* 间距倍率与字号倍率分开：大屏上间距若与字号同倍放大，一屏就只剩两三行 */
+  --sp-k: 1;
+  /* 触控目标：常规 44（Skill 下限）；希沃大屏 56（原设计要求的更严标准） */
+  --touch: 44px;
+  /* 顶栏实高：投屏页要靠它算出「一屏放下」的确定高度（实测 81px，含边框）。
+     写成变量而不是散落的魔法数字 —— 顶栏高度变化时只需改这一处。 */
+  --nav-h: 81px;
+
+  /* ── 圆角 ── */
+  --radius-s: 10px;
+  --radius-m: 16px;
+  --radius-l: 22px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  /* ── 阴影（克制：只用环境遮蔽，不做发光边框）── */
+  --shadow-1: 0 2px 10px rgba(0, 0, 0, 0.34);
+  --shadow-2: 0 14px 34px rgba(0, 0, 0, 0.42);
+  --shadow-3: 0 30px 70px rgba(0, 0, 0, 0.5);
+
+  /* ── 焦点 ── */
+  --focus-ring: 2px solid #a9e3c6;
+  --focus-offset: 2px;
+}
+
+/* ═══ House 色（仅白虎 与 玄武 的颜色来自后端配置；青龙/凤凰为可替换设计值）═══
+   --hc*     深底上的文字 / 描边 / 图示用色（对比度 ≥ 7:1，见 _verify 核对表）
+   --ink-*   水墨材质用色：a/b 为墨色主调（screen 叠加提亮），c 为沉墨（multiply 压深），
+             accent 为飞白与轮廓高光。数值按「合成后卡面保持深墨、文字仍 ≥ 4.5:1」标定。
+   --band    数据带底色：内容底层 + 该院色 6%。四张卡在文字区也能区分，
+             且合成后亮度仍让 12px 次级文字 ≥ 5:1（实测见交付报告）。 */
+.house-tiger {
+  --hc: #c8d2d8;  --hc-deep: #7f8d97;
+  --ink-a: #a7b2bb; --ink-b: #dae1e6; --ink-c: #37424a; --ink-accent: #eef2f5;
+  --band: #182220;
+}
+.house-dragon {
+  --hc: #5fbf9e;  --hc-deep: #2e7d64;
+  --ink-a: #35a37f; --ink-b: #7ad3ad; --ink-c: #123f2f; --ink-accent: #b6ecd0;
+  --band: #12201a;
+}
+.house-tortoise {
+  --hc: #8fb4c9;  --hc-deep: #46587e;
+  --ink-a: #5b83ad; --ink-b: #a3c6da; --ink-c: #26375a; --ink-accent: #d3e6f2;
+  --band: #131d24;
+}
+.house-phoenix {
+  --hc: #e08a5e;  --hc-deep: #b4502f;
+  --ink-a: #c85f39; --ink-b: #f0a878; --ink-c: #632715; --ink-accent: #f8c9a5;
+  --band: #1e1c14;
+}
+
+/* ═══ 基础元素 ═══ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { color-scheme: dark; -webkit-text-size-adjust: 100%; }
+html, body { max-width: 100%; }
+body {
+  background: var(--bg-page);
+  color: var(--ink-1);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden; /* 装饰层越界不产生横向滚动 */
+  /* 中英混排：中文标点自动收紧，避免「，」「。」占满一格造成的松散感 */
+  text-spacing-trim: space-first;
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+}
+img, svg { display: block; max-width: 100%; }
+button { font: inherit; color: inherit; cursor: pointer; background: none; border: none; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: none; }
+
+/* 标题：字号与行高成对出现，字距随字号收紧 */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: var(--lh-h3);
+  letter-spacing: var(--tracking-title);
+  text-wrap: balance;
+}
+h1 { line-height: var(--lh-h1); }
+p { text-wrap: pretty; overflow-wrap: break-word; }
+/* 中文正文按内容宽度限行，避免超长行（编辑式排版的可读性下限） */
+.lead, .prose { max-width: 64ch; }
+.num { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+.mono { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-2); }
+
+/* 焦点：2px 描边 + 2px 偏移，描边色对页面底 4.4:1、对内容底 ≥ 4:1（WCAG 2.4.11/2.4.13） */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+  border-radius: 6px;
+}
+/* 键盘滚动到被 sticky 顶栏遮住的位置时，留出顶栏高度的滚动边距 */
+html { scroll-padding-top: 84px; }
+
+/* 仅屏幕阅读器 */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ═══ 排版原子 ═══
+   三种字体角色各司其职：
+     标签 → 等宽（小、宽字距、大写感）：像技术文档的字段名，冷静且对齐整齐
+     区块标题 → 衬线：与首屏大标题同一族，形成纵向的排版节奏
+     正文 / 按钮 / 表格 → 无衬线：界面控件必须一眼可读
+   这一条是"去模板感"的核心：原来全站只有无衬线一个声音，所以像批量生成。 */
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.1em;
+  line-height: var(--lh-xs); text-transform: uppercase; color: var(--ink-3);
+}
+.label.on-ink { color: var(--ink-2); }
+.section-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2); font-weight: 700; line-height: var(--lh-h2);
+  letter-spacing: -0.01em;
+}
+.subsection-title { font-size: var(--fs-h3); font-weight: 700; line-height: var(--lh-h3); }
+/* 页题：编辑式排版的锚点 —— 大字号 + 收紧行高与字距 */
+.display {
+  font-family: var(--font-display); font-size: var(--fs-display); font-weight: 700;
+  line-height: var(--lh-display); letter-spacing: var(--tracking-display);
+}
+.lead { color: var(--ink-2); font-size: var(--fs-lead); line-height: var(--lh-lead); }
+.prose { color: var(--ink-2); font-size: var(--fs-body); line-height: var(--lh-body); }
+.note {
+  color: var(--ink-3); font-size: var(--fs-xs); line-height: var(--lh-xs); max-width: 72ch;
+  border-left: 1px solid var(--line-2); padding-left: var(--sp-3);
+}
+.figure { font-family: var(--font-figure); font-size: var(--fs-display); font-weight: 700; line-height: 1; letter-spacing: var(--tracking-display); }
+.divider { height: 1px; background: var(--line-1); border: 0; }
+
+/* ═══ 控件：按钮（液态玻璃 / 墨绿实底 / 描边）═══ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  min-height: var(--touch); padding: 0 var(--sp-5); border-radius: var(--radius-pill);
+  font-size: var(--fs-sm); font-weight: 600; line-height: 1; white-space: nowrap;
+  border: 1px solid var(--line-2); color: var(--ink-1); background: transparent;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.btn:hover { background: rgba(237, 241, 235, 0.07); border-color: var(--line-3); }
+.btn-primary { background: var(--accent-deep); border-color: var(--accent-line); color: var(--accent); }
+.btn-primary:hover { background: #17402a; border-color: var(--accent-line-strong); color: #a9e3c6; }
+.btn-quiet { border-color: transparent; color: var(--ink-2); }
+.btn-quiet:hover { color: var(--ink-1); background: rgba(237, 241, 235, 0.07); }
+.btn-sm { min-height: var(--touch); padding: 0 var(--sp-4); font-size: var(--fs-xs); }
+.btn-lg { min-height: calc(var(--touch) * 1.2); padding: 0 var(--sp-6); font-size: var(--fs-body); }
+/* 主行动按钮：比赛进行中/待开赛时，「进入答题」「进入等待室」是页面上最重要的动作，
+   给更大的尺寸与更重的字重，让它在一屏里第一眼被看到（而不是靠颜色抢）。 */
+.btn-xl {
+  min-height: calc(var(--touch) * 1.5); padding: 0 var(--sp-7);
+  font-size: calc(var(--fs-body) * 1.08); font-weight: 700; letter-spacing: 0.01em;
+}
+.btn[disabled], .btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+.btn[aria-disabled="true"]:hover { background: transparent; }
+
+/* ═══ 状态标记（短文本，不做胶囊堆叠）═══ */
+.tag {
+  display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs);
+  color: var(--ink-2); white-space: nowrap;
+  /* 小字号状态标签可能落在水墨较亮处。实测（冻结动画、文字透明后拍背景）：
+     最亮背景 rgb(99,81,38) L=0.0868，12px 文字无论用什么颜色都到不了 4.5:1
+     —— 因为限制项是背景亮度本身，不是文字颜色。因此给它一个**实底胶囊**：
+     背景压到实测 ≥ 8:1，同时它也是全站"状态胶囊"的统一形状。 */
+  /* 改用**不透明**实底：半透明（.86）会让约 14% 的墨透上来，实测仍会有一处
+     偏亮的背景像素（rgb(96,79,35)）把 12px 文字压到 2.75:1。状态标签是"要一眼看清"
+     的元素，不值得为那点通透感牺牲可读性 —— 直接给不透明实底。 */
+  background: #0a100e;
+  border: 1px solid var(--line-1);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+/* 只在真的有底色的胶囊上取掉描影（描影是给裸文字兜底用的） */
+.tag:not(.tag-plain) { text-shadow: none; }
+.tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); flex: none; }
+.tag.ok::before { background: var(--state-ok); }
+.tag.warn::before { background: var(--state-warn); }
+.tag.live::before { background: var(--state-err); }
+.tag-box {
+  display: inline-block; font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--state-warn);
+  border: 1px solid rgba(217, 164, 65, 0.42); border-radius: 4px; padding: 1px 7px; white-space: nowrap;
+}
+.badge-num {
+  font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2);
+  border: 1px solid var(--line-2); border-radius: var(--radius-pill); padding: 2px 10px; white-space: nowrap;
+}
+
+/* ═══ 容器/面板 ═══ */
+.container { width: 100%; max-width: var(--container-max); margin-inline: auto; padding-inline: var(--pad-x); }
+.panel {
+  border: 1px solid var(--line-1); border-radius: var(--radius-m);
+  background: var(--bg-panel); padding: var(--sp-5) var(--sp-5);
+}
+.panel-2 { background: var(--bg-panel-2); }
+.glass {
+  background: var(--bg-glass);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  backdrop-filter: blur(18px) saturate(1.25);
+  border: 1px solid var(--line-2);
+}
+
+/* ═══ 表单 ═══ */
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--sp-4); }
+.field label { font-size: var(--fs-sm); color: var(--ink-2); }
+.field input, .field select, .field textarea,
+input[type="text"], input[type="password"], input[type="number"], select, textarea {
+  background: var(--bg-well); border: 1px solid var(--line-2); border-radius: var(--radius-s);
+  color: var(--ink-1); padding: 10px 13px; font-size: var(--fs-sm); font-family: inherit; min-height: var(--touch);
+}
+.field input::placeholder, textarea::placeholder { color: var(--ink-3); }
+.field input:focus, select:focus, textarea:focus, input:focus { border-color: var(--accent-line); }
+
+/* ═══ 表格（成绩与后台：数据型内容，必须清楚）═══ */
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.table th {
+  text-align: left; color: var(--ink-2); font-weight: 600; font-size: var(--fs-xs);
+  letter-spacing: 0.06em; padding: 10px 12px; border-bottom: 1px solid var(--line-2); white-space: nowrap;
+}
+.table td { padding: 11px 12px; border-bottom: 1px solid var(--line-1); vertical-align: middle; }
+.table tbody tr:last-child td { border-bottom: none; }
+.table tbody tr:hover td { background: rgba(237, 241, 235, 0.03); }
+
+/* ═══ 定义列表（账号信息等键值对）═══ */.kv { display: grid; gap: 1px; margin: 0; background: var(--line-1); border: 1px solid var(--line-1); border-radius: var(--radius-s); overflow: hidden; }
+.kv > div { display: flex; gap: var(--sp-4); align-items: baseline; background: var(--bg-panel); padding: 11px 15px; }
+.kv dt { flex: none; width: 72px; color: var(--ink-2); font-size: var(--fs-xs); letter-spacing: 0.06em; }
+.kv dd { margin: 0; color: var(--ink-1); font-size: var(--fs-sm); }
+
+/* 顶栏账号按钮上的「需要修改密码」提示点（非唯一识别手段：另有文字与页面标题） */
+.dot-warn { width: 6px; height: 6px; border-radius: 50%; background: var(--state-warn); flex: none; }
+
+/* ═══ 提示块 ═══ */
+.error-box, .ok-box, .info-box {
+  border-radius: var(--radius-s); padding: 11px 15px; font-size: var(--fs-sm); margin: var(--sp-3) 0;
+}
+.error-box { border: 1px solid rgba(224, 132, 122, 0.4); background: var(--state-err-bg); color: var(--state-err); }
+.ok-box { border: 1px solid rgba(111, 211, 160, 0.36); background: var(--state-ok-bg); color: var(--state-ok); }
+.info-box { border: 1px solid var(--line-1); background: var(--bg-panel); color: var(--ink-2); }
+
+/* ═══ 连接状态 ═══ */
+.conn { display: inline-flex; align-items: center; gap: 7px; font-size: var(--fs-xs); color: var(--ink-2); white-space: nowrap; }
+.conn i { width: 7px; height: 7px; border-radius: 50%; background: var(--state-ok); flex: none; }
+.conn.off i { background: var(--state-err); }
+
+/* ═══ 行/网格工具 ═══ */
+.row { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
+.spread { display: flex; align-items: baseline; gap: var(--sp-4); flex-wrap: wrap; }
+.dim { color: var(--ink-3); font-size: var(--fs-xs); }
+.mb-4 { margin-bottom: var(--sp-4); }
+
+/* House 识别点：色 + 文字双通道（颜色不是唯一识别手段） */
+.house-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 2px;
+  margin-right: 8px; vertical-align: baseline; background: var(--ink-3);
+}
+.house-dot.h-tiger { background: #dce0e3; }
+.house-dot.h-dragon { background: #5fbf9e; }
+.house-dot.h-tortoise { background: #8fb4c9; }
+.house-dot.h-phoenix { background: #e08a5e; }
+
+/* ═══ 排行榜 ═══ */
+.lb { margin-top: var(--sp-5); }
+.lb-tabs { grid-auto-columns: minmax(0, 1fr); }
+.lb-table td:first-child { width: 56px; }
+.lb-table small { display: block; }
+.spread > .push { margin-left: auto; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   双界面皮肤：**日常 = 冷系（默认）· 竞赛 = 暖系（覆盖）**
+   ───────────────────────────────────────────────────────────────────────────
+   为什么这样分：
+     日常是"安静自习、刷题上榜"——冷色（墨绿近黑 + 青绿）让人沉下来做题；
+     竞赛是"赛场、聚光灯、紧张热烈"——暖色（棕黑 + 橙金）把气氛拉起来。
+   实现上只重映射**语义 token**，组件里没有一处 `if (mode === ...)`：
+   加新组件自动继承两套皮肤，也不会漏掉某个角落（按钮/表格/提示条都取自这些 token）。
+
+   作用范围：`data-mode="comp"` 由 App 只写在**竞赛模式的首页**上。
+   答题页、观战页、投屏大屏在比赛期间保持默认冷色 ——
+   否则切一下模式会把正在投屏的比赛页面一起改色，现场会很混乱。
+   ═══════════════════════════════════════════════════════════════════════ */
+html[data-mode="comp"] {
+  --mode-accent: var(--warm-accent);
+  --mode-accent-deep: var(--warm-accent-deep);
+  --mode-accent-line: var(--warm-accent-line);
+  --mode-accent-line-strong: var(--warm-accent-line-strong);
+
+  /* 直接覆盖全局语义 token —— 整套换肤，不是局部染色 */
+  --bg-page: var(--warm-page);
+  --bg-panel: var(--warm-panel);
+  --bg-panel-2: var(--warm-panel-2);
+  --bg-well: #0e0c09;
+  --ink-1: var(--warm-ink-1);
+  --ink-2: var(--warm-ink-2);
+  --ink-3: var(--warm-ink-3);
+  --accent: var(--warm-accent);
+  --accent-deep: var(--warm-accent-deep);
+  --accent-line: var(--warm-accent-line);
+  --accent-line-strong: var(--warm-accent-line-strong);
+  --line-1: rgba(242, 236, 227, 0.1);
+  --line-2: rgba(242, 236, 227, 0.4);
+  --line-3: rgba(242, 236, 227, 0.56);
+  --focus-ring: 2px solid var(--warm-accent);
+}
+/* 暖底上的状态色（原值按冷底选的，放暖底会发灰） */
+html[data-mode="comp"] .dot-warn,
+html[data-mode="comp"] .tag.warn::before { background: var(--warm-accent); }
+html[data-mode="comp"] .tag-box { color: var(--warm-accent);
+  border-color: rgba(255, 150, 64, 0.42); }
+
+/* 切换模式时做一次柔和的"换光"过渡，而不是硬切 —— 现场切换不该闪白 */
+html[data-mode] .app-shell,
+html[data-mode] .ink-field .field-base {
+  transition: background-color var(--dur-panel) var(--ease-out);
+}
+html[data-motion="reduced"] .app-shell,
+html[data-motion="reduced"] .ink-field .field-base { transition: none; }
+
+/* ═══ 日常模式：排行榜主屏 ══════════════════════════════════════════════════
+   需求：日常模式就是"刷题 + 打榜"，因此页面主体直接给榜单，
+   前三名用领奖台形式明确展示（名次、昵称、正确率、用时、连对、题量）。
+   领奖台的次序是 2 - 1 - 3（视觉惯例），但 DOM 顺序仍按 1-2-3，
+   保证读屏用户听到的顺序是正确名次而不是视觉顺序。 */
+.standings { margin-top: var(--sp-6); }
+.sd-head { display: flex; align-items: flex-end; gap: var(--sp-4); flex-wrap: wrap; }
+.sd-title { font-family: var(--font-display); font-size: var(--fs-h1); font-weight: 700;
+  line-height: var(--lh-h1); margin: 0; }
+.sd-tabs { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+
+.podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap-card); margin-top: var(--sp-5); align-items: end; }
+@media (max-width: 820px) { .podium { grid-template-columns: 1fr; } }
+.pd-card {
+  position: relative; display: grid; gap: 6px; justify-items: center; text-align: center;
+  padding: var(--sp-6) var(--sp-4) var(--sp-5);
+  border: 1px solid var(--line-2); border-radius: var(--radius-l);
+  background: var(--mode-panel);
+  order: 2;   /* DOM 1-2-3，视觉 2-1-3：用 order 调整而不改 DOM 顺序 */
+}
+.pd-card.rank-1 {
+  order: 1; padding-block: calc(var(--sp-8) * 0.72) var(--sp-6);
+  border-color: var(--mode-accent-line);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--mode-accent) 10%, var(--mode-panel)), var(--mode-panel));
+}
+.pd-card.rank-3 { order: 3; }
+.pd-rank { font-family: var(--font-display); font-size: var(--fs-h2); font-weight: 700;
+  color: var(--ink-3); }
+.pd-card.rank-1 .pd-rank { color: var(--mode-accent); font-size: var(--fs-h1); }
+.pd-name { font-family: var(--font-display); font-size: var(--fs-h3); font-weight: 700;
+  overflow-wrap: anywhere; }
+.pd-score { font-family: var(--font-figure); font-weight: 700; line-height: 1;
+  font-size: var(--fs-display); }
+.pd-card.rank-1 .pd-score { color: var(--mode-accent); }
+.pd-unit { font-size: var(--fs-xs); color: var(--ink-3); letter-spacing: var(--tracking-label);
+  text-transform: uppercase; }
+.pd-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2);
+  width: 100%; margin-top: var(--sp-3); padding-top: var(--sp-3);
+  border-top: 1px solid var(--line-1); }
+.pd-facts div { display: grid; gap: 2px; }
+.pd-facts dt { font-size: var(--fs-xs); color: var(--ink-3); }
+.pd-facts dd { margin: 0; font-family: var(--font-figure); font-size: var(--fs-sm);
+  font-weight: 700; }
+.pd-empty { color: var(--ink-2); font-size: var(--fs-sm); }
+
+/* 日常模式下的一行比赛提示：可点但不抢主行动（区别于竞赛模式的整条横幅） */
+.daily-notice {
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  margin-top: var(--sp-5); padding: 10px var(--sp-4);
+  border: 1px solid var(--line-1); border-left: 3px solid var(--mode-accent);
+  border-radius: var(--radius-s); background: var(--mode-panel);
+  color: var(--ink-2); font-size: var(--fs-sm);
+}
+.dn-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mode-accent); flex: none;
+  animation: ms-pulse 2.2s var(--ease-io) infinite alternate; }
+.dn-link { margin-left: auto; color: var(--mode-accent); font-weight: 600;
+  text-decoration: underline; text-underline-offset: 3px; }
+html[data-motion="reduced"] .dn-dot { animation: none; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ⚠️ 下面这一整段「希沃大屏档」规则**已下线，现在是死代码**（2026-09-26 产品决定）。
+   ───────────────────────────────────────────────────────────────────────────
+   为什么会留着：它记录了这一档的完整来历与参数，将来若要恢复"远距可读"，
+   从这段出发比从零重来省事。但请注意三点，别误以为它还在生效：
+
+     ① 前端已经**不再设置** `data-display="large"`（见 design/motion.ts：
+        档位开关与自动判定都已删除，且会主动清掉 localStorage 里的 mgus-display 记录）。
+        所以 `html[data-display="large"]` 永不匹配，这些规则一行都不会应用。
+     ② 设置里也没有「显示尺寸」这个入口了 —— 页面对所有设备固定使用同一套尺寸。
+     ③ 要恢复这一档，改的不只是 CSS：motion.ts 的类型与读写、Layout 的开关、
+        以及 _verify/screenfonts.cjs 的分档断言都要一起回来，否则会停在"半开"的状态。
+
+   原设计意图（保留备查）：
+   实测 1920×1080 桌面基准下，练习页内容只占约 341px 高（32% 视口），字号按 12–17px 排；
+   而希沃是**触屏 + 3–6 米观看**的场景，这套比例明显偏稀。
+   做法：所有刻度由两个倍率驱动、**比例关系不变**，只整体放大：
+     --fs    字号倍率：1 → 1.9
+     --sp-k  间距倍率：1 → 1.35（比字号保守：同倍放大会导致一屏只剩两三行）
+   ═══════════════════════════════════════════════════════════════════════════
+   希沃大屏档（display mode）
+   ───────────────────────────────────────────────────────────────────────────
+   为什么需要：实测 1920×1080 桌面基准下，练习页内容只占约 341px 高（32% 视口），
+   字号按 12–17px 排；而希沃是**触屏 + 3–6 米观看**的场景，这套比例明显偏稀。
+   学校要求"适合在触屏希沃上使用、展示"——所以这不是美化，是使用场景适配。
+
+   做法：所有刻度都由两个倍率驱动，**比例关系不变**，只整体放大。
+     --fs    字号倍率：1 → 1.9
+     --sp-k  间距倍率：1 → 1.35（比字号保守：同倍放大会导致一屏只剩两三行）
+     --touch 触控目标：44 → 56（原设计对希沃要求 56–64，比 Skill 的 44 下限更严）
+
+   三档来源（优先级从低到高）：
+     1. html[data-display="large"]      —— 手动/持久化
+     2. html[data-display="standard"]   —— 手动关闭自动
+     3. 未设置时由 JS 按屏幕尺寸与触摸能力自动判定（main.tsx）
+   与动效三档（full/simplified/reduced）**正交**：功能完全一致，只是尺寸不同。
+   ═══════════════════════════════════════════════════════════════════════════ */
+html[data-display="large"] {
+  --fs: 1.9;
+  --sp-k: 1.35;
+  --touch: 56px;
+  --container: 1800px;   /* 与 --fs 相乘后约 3420px：大屏上一行仍是 100–120 字符，不会拉成长条 */
+}
+/* 投屏/大屏页自身再大一档：这几页没有大量正文，可以放心放大 */
+html[data-display="large"] .screen-page,
+html[data-display="large"] .results-page {
+  --fs: 2.15;
+  --touch: 64px;
+}
+
+/* 投屏 / 观赛大屏：**观看距离由页面决定，不由设备决定**。
+   为什么挂在 <html> 上而不是 .screen-page 上：
+   `--fs-xs` 这类派生刻度声明在 :root，其计算值在 :root 就已经把 var(--fs) 代入并**固化**，
+   再作为"算好的值"继承下去。在后代元素上重声明 `--fs` 不会让它们重算，
+   只有直接写 var(--fs) 的属性才跟着变 —— 实测结果是同一屏里 30px 与 12px 并存。
+   必须让 `--fs` 与 `:root` 落在同一个元素上，整条刻度才会一起重算。
+   （由 useCalmInk() 添加，与投屏/观赛页同生命周期。）
+
+   档位怎么取（这里踩过一次坑，写清楚免得再犯）：
+     **不额外抬高倍率**，只用"大屏档"这一个用户开关决定：
+       标准档  --fs: 1     —— 与全站一致
+       大屏档  --fs: 1.9   —— 与全站一致
+     ⚠️ 曾经在这里无条件写 `--fs: 1.35`（后来又试过 2.15），理由是"投影要看得清"。
+     结果是**普通显示器上打开投屏页也整体放大**，一眼看去字大得离谱、一屏放不下几样东西，
+     而且 stage 被压矮后卡片与页脚直接叠在一起。用户的判断是对的：太大了。
+     想让远处看清，正确做法是**打开「大屏档」**（右上角设置里），而不是让页面自己替用户决定。
+     刻度下面这个规则只解决一个真问题：让"大屏档"在这两页**真的生效**
+     （原因见上面 :root 固化那段）。
+   注意：改这一档会改变高度，必须重跑 _verify/screenbudget.cjs 确认仍是一屏放下。 */
+html[data-display="large"].big-screen {
+  --fs: 1.9;
+  --touch: 64px;
+  --container: 1800px;
+}
+
+/* 注册结果页（需审模式）：给学生一个明确的"已完成、在等待"的收束画面 */
+.reg-done { display: grid; gap: var(--sp-2); justify-items: start; }
+.rd-mark {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: var(--radius-pill);
+  border: 1px solid var(--accent-line); background: var(--accent-deep);
+  color: var(--accent); font-size: var(--fs-xs); font-weight: 700;
+  letter-spacing: var(--tracking-label);
+}
+.rd-mark::before { content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); }
+
+/* ═══ 后台：数据大屏卡片 + 开关行 ═══════════════════════════════════════════ */
+.ov-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px; background: var(--line-1); border: 1px solid var(--line-1);
+  border-radius: var(--radius-m); overflow: hidden; }
+@media (max-width: 900px) { .ov-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ov-cell { display: grid; gap: 2px; padding: var(--sp-5); background: var(--bg-panel); }
+.ov-name { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm);
+  color: var(--ink-2); }
+.ov-big { font-family: var(--font-figure); font-size: var(--fs-h1); font-weight: 700;
+  line-height: 1.05; }
+.ov-sub { font-size: var(--fs-xs); color: var(--ink-3); letter-spacing: var(--tracking-label); }
+.ov-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px var(--sp-3);
+  margin: var(--sp-4) 0 0; padding-top: var(--sp-3); border-top: 1px solid var(--line-1); }
+.ov-facts div { display: flex; align-items: baseline; gap: 6px; }
+.ov-facts dt { font-size: var(--fs-xs); color: var(--ink-3); }
+.ov-facts dd { margin: 0; font-family: var(--font-figure); font-size: var(--fs-sm); font-weight: 700; }
+
+.sw-row { display: flex; align-items: flex-start; gap: var(--sp-4); padding: var(--sp-4) 0;
+  border-bottom: 1px solid var(--line-1); }
+.sw-row:last-child { border-bottom: none; }
+.sw-row > span { display: grid; gap: 4px; min-width: 0; }
+.sw-row b { font-size: var(--fs-body); font-weight: 600; }
+.sw-row em { font-style: normal; font-size: var(--fs-xs); color: var(--ink-3); line-height: var(--lh-xs);
+  max-width: 62ch; }
+.sw-row input[type="checkbox"] { width: 20px; height: 20px; margin-top: 3px; flex: none;
+  accent-color: var(--accent); }

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 76" width="260" height="76" role="img" aria-label="MGUS 国贸枫禾 House 知识竞赛">
+  <title>MGUS 国贸枫禾 · House 知识竞赛（字标 + 标识组合）</title>
+  <!-- 标识与页眉、站点图标保持一致 -->
+  <g transform="translate(6 17) scale(.215)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M29 36 102 17l74 19" stroke="#9BE5C5" stroke-width="7"/>
+    <path d="M29 52h147M38 67h128" stroke="#F4F7F2" stroke-width="7"/>
+    <path d="M43 135v-29c0-11 7-18 18-18s18 7 18 18v29M85 135v-29c0-11 7-18 18-18s18 7 18 18v29M127 135v-29c0-11 7-18 18-18s18 7 18 18v29" stroke="#F4F7F2" stroke-width="7"/>
+    <path d="M31 150h142" stroke="#F4F7F2" stroke-width="7"/>
+  </g>
+  <!-- 字标 -->
+  <g font-family="Inter, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei UI', sans-serif">
+    <text x="62" y="35" fill="#EDF1EB" font-size="24" font-weight="800" letter-spacing="-0.4">MGUS</text>
+    <text x="63" y="56" fill="#A8B5AC" font-size="13.5" font-weight="600" letter-spacing="1.6">国贸枫禾</text>
+    <text x="130" y="56" fill="#8A9A90" font-size="9.5" font-weight="600" letter-spacing="1.9">HOUSE 知识竞赛</text>
+  </g>
+</svg>
